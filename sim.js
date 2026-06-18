@@ -78,6 +78,41 @@ console.log("== 전투 밸런스 단위 테스트 ==");
   assert(!s.lines[0][2].armies[1], "3기 vs 2기: 방어측 전멸");
 }
 
+// 3차 변경 기능 테스트
+{
+  // 교차: owner0 slot1 3기 marching, owner1 slot2 2기 marching → 3vs2, 승자 1기 slot2 전진
+  const s = E.createState();
+  s.lines[0][1].armies[0] = { hp: 30, count: 3, marching: 3 };
+  s.lines[0][2].armies[1] = { hp: 20, count: 2, marching: 2 };
+  E.resolveMovement(s);
+  const a = s.lines[0][2].armies[0];
+  assert(a && a.count === 1 && a.marching === 1, "교차 전투: 승자 1기 전진(slot2), marching 동기화");
+  assert(!s.lines[0][2].armies[1] && !s.lines[0][1].armies[1], "교차 전투: 패자 전멸");
+}
+{
+  // 다중 본진포탑(hp40=2개) vs 3유닛 → 포탑 생존
+  const s = E.createState();
+  s.players[1].baseTower = { hp: 40 };
+  s.lines[0][4].armies[0] = { hp: 30, count: 3, marching: 0 };
+  E.resolveBase(s);
+  assert(s.players[1].baseTower && s.players[1].baseTower.hp === 10, "본진포탑2(hp40) vs 3유닛: 포탑 생존(hp10)");
+  assert(!s.lines[0][4].armies[0], "본진포탑2 vs 3유닛: 유닛 전멸");
+}
+{
+  // 유닛 3마리 한 행동 생산
+  const s = E.createState(); s.players[0].gold = 1000;
+  E.applyAction(s, 0, { type: "unit", line: 0, count: 3 });
+  assert(s.queues[0].units.length === 3 && s.players[0].gold === 850, "유닛 3마리/행동 생산(150G)");
+}
+{
+  // 공격연구1 → effAtk 12
+  const s = E.createState(); s.players[0].research.atk = 1;
+  s.players[1].baseTower = { hp: 20 };
+  s.lines[0][4].armies[0] = { hp: 30, count: 3, marching: 0 };
+  E.resolveBase(s);
+  assert(!s.players[1].baseTower, "공격연구1 3유닛(ATK12): 본진포탑1 파괴");
+}
+
 // ---------- AI vs AI 매치업 ----------
 console.log("\n== AI vs AI 100판 승률 ==");
 const matchups = [

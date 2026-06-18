@@ -30,6 +30,7 @@
     COST_UNIT: 50,
     COST_TOWER: 100,
     COST_BASE_TOWER: 100,
+    COST_RESEARCH: 100,
     UNIT_HP: 10,
     UNIT_ATK: 10,
     TOWER_HP: 20,
@@ -63,10 +64,19 @@
       gold: C.START_GOLD,
       workers: C.START_WORKERS,
       baseHp: C.BASE_HP,
-      baseTower: null, // { hp } | null
+      baseTower: null, // { hp } | null  (hp는 20의 배수로 스택; 유효 포탑수 = ceil(hp/20))
+      research: { atk: 0, def: 0 },
       alive: true,
     };
   }
+
+  // ---------- 연구 유효치 ----------
+  function effAtk(state, side) { return C.UNIT_ATK + 2 * state.players[side].research.atk; }
+  function effHp(state, side) { return C.UNIT_HP + 2 * state.players[side].research.def; }
+  function scoutHpOf(state, side) { return C.SCOUT_HP + 2 * state.players[side].research.def; }
+  // 포탑 유효 수 / 공격력 (스택)
+  function towerCount(hp) { return Math.ceil(hp / C.TOWER_HP); }
+  function towerAtkOf(hp) { return towerCount(hp) * C.TOWER_ATK; }
 
   function createState(opts) {
     opts = opts || {};
@@ -95,8 +105,8 @@
   }
 
   function createQueue() {
-    return { workers: 0, units: [], towers: [], baseTower: false, scouts: [] };
-    // units: [{line}], towers: [{line}], scouts: [{line}]
+    return { workers: 0, units: [], towers: [], baseTower: 0, scouts: [], research: { atk: 0, def: 0 } };
+    // units: [{line}], towers: [{line}], baseTower: 갯수, scouts: [{line}], research: 레벨증가
   }
 
   function makeIntel() {
@@ -125,27 +135,31 @@
       return ok();
     }
     if (action.type === "unit") {
-      if (p.gold < C.COST_UNIT) return fail("골드 부족");
-      p.gold -= C.COST_UNIT;
-      q.units.push({ line: action.line });
+      const n = clampCount(action.count);
+      if (p.gold < C.COST_UNIT * n) return fail("골드 부족");
+      p.gold -= C.COST_UNIT * n;
+      for (let i = 0; i < n; i++) q.units.push({ line: action.line });
       return ok();
     }
     if (action.type === "tower") {
-      if (p.gold < C.COST_TOWER) return fail("골드 부족");
-      const slot = state.lines[action.line][spawnSlot(side)];
-      if (slot.tower) return fail("이미 포탑 있음");
-      // 같은 턴 중복 건설 방지
-      if (q.towers.some((t) => t.line === action.line)) return fail("이미 건설 예약");
-      p.gold -= C.COST_TOWER;
-      q.towers.push({ line: action.line });
+      const n = clampCount(action.count);
+      if (p.gold < C.COST_TOWER * n) return fail("골드 부족");
+      p.gold -= C.COST_TOWER * n;
+      for (let i = 0; i < n; i++) q.towers.push({ line: action.line });
       return ok();
     }
     if (action.type === "baseTower") {
-      if (p.gold < C.COST_BASE_TOWER) return fail("골드 부족");
-      if (p.baseTower) return fail("본진포탑 존재");
-      if (q.baseTower) return fail("이미 건설 예약");
-      p.gold -= C.COST_BASE_TOWER;
-      q.baseTower = true;
+      const n = clampCount(action.count);
+      if (p.gold < C.COST_BASE_TOWER * n) return fail("골드 부족");
+      p.gold -= C.COST_BASE_TOWER * n;
+      q.baseTower += n;
+      return ok();
+    }
+    if (action.type === "research") {
+      const branch = action.branch === "def" ? "def" : "atk";
+      if (p.gold < C.COST_RESEARCH) return fail("골드 부족");
+      p.gold -= C.COST_RESEARCH;
+      q.research[branch] += 1;
       return ok();
     }
     if (action.type === "scout") {
@@ -173,6 +187,7 @@
     function fail(reason) { return { ok: false, reason }; }
   }
 
+  function clampCount(c) { return Math.max(1, Math.min(3, c == null ? 1 : c)); }
   function countQueuedScouts(q) { return q.scouts.length; }
 
   // ---------- 턴 해결 ----------
@@ -241,43 +256,71 @@
     return out;
   }
 
-  // 2. 이동: marching 병력을 진군 방향으로 1칸 이동.
+  // 진군 부분 병력(marching 서브셋)을 칸에서 추출/배치
+  function extractMoving(slot, owner, state) {
+    const a = slot.armies[owner];
+    const m = a.marching;
+    a.count -= m; a.marching = 0; a.hp = a.count * effHp(state, owner);
+    if (a.count <= 0) slot.armies[owner] = null;
+    return { count: m, hp: m * effHp(state, owner), marching: m };
+  }
+  function placeMover(slot, owner, mv, state) {
+    if (mv.count <= 0) return null;
+    if (!slot.armies[owner]) slot.armies[owner] = { hp: 0, count: 0, marching: 0 };
+    const d = slot.armies[owner];
+    d.count += mv.count; d.hp += mv.count * effHp(state, owner); d.marching += mv.marching;
+    return d;
+  }
+
+  // 두 군대 동시 전멸까지 교전(owner별 연구 유효치 적용). 객체 count/hp 갱신.
+  function fightArmies(a, b, state, oa, ob) {
+    let guard = 0;
+    while (a.count > 0 && b.count > 0 && guard++ < 300) {
+      const aAtk = a.count * effAtk(state, oa);
+      const bAtk = b.count * effAtk(state, ob);
+      a.hp -= bAtk; b.hp -= aAtk;
+      a.count = a.hp > 0 ? Math.floor(a.hp / effHp(state, oa)) : 0;
+      b.count = b.hp > 0 ? Math.floor(b.hp / effHp(state, ob)) : 0;
+    }
+  }
+
+  // 2. 이동: 교차 선처리(스쳐 지나감 → 먼저 전투, 승자만 전진) 후 일반 1칸 이동.
   function resolveMovement(state) {
     for (let l = 0; l < C.LINES; l++) {
       const slots = state.lines[l];
-      // 각 owner에 대해, 진군 방향으로 처리(겹침 방지 위해 방향 끝에서부터)
+      // 1) 교차: owner0 s→s+1, owner1 s+1→s 가 둘 다 진군이면 위치 맞바꿈 → 먼저 교전.
+      for (let s = 0; s < C.SLOTS - 1; s++) {
+        const A = slots[s].armies[0], B = slots[s + 1].armies[1];
+        if (!(A && A.marching > 0) || !(B && B.marching > 0)) continue;
+        const mvA = extractMoving(slots[s], 0, state);
+        const mvB = extractMoving(slots[s + 1], 1, state);
+        fightArmies(mvA, mvB, state, 0, 1);
+        mvA.marching = mvA.count; mvB.marching = mvB.count; // 생존자는 계속 진군
+        if (mvA.count > 0) { const d = placeMover(slots[s + 1], 0, mvA, state); if (d) d._crossed = true; }
+        else if (mvB.count > 0) { const d = placeMover(slots[s], 1, mvB, state); if (d) d._crossed = true; }
+        state.log.push(`${LINE_NAMES[l]} ${s}↔${s + 1}칸 교차 교전`);
+      }
+      // 2) 일반 이동: 남은 진군 병력 1칸. 현재 칸에 적 유닛/포탑 있으면 정지(전투단계 교전).
       for (let owner = 0; owner < 2; owner++) {
         const d = dir(owner);
-        // 진군 방향으로 먼 칸부터 이동(앞 칸이 비도록)
-        const order = d === 1
-          ? [3, 2, 1, 0] // owner0: 앞쪽(큰 인덱스)부터
-          : [1, 2, 3, 4]; // owner1: 앞쪽(작은 인덱스)부터
+        const order = d === 1 ? [3, 2, 1, 0] : [1, 2, 3, 4];
         for (const s of order) {
           const slot = slots[s];
           const army = slot.armies[owner];
-          if (!army || !army.marching || army.marching <= 0) continue;
+          if (!army || !army.marching || army.marching <= 0 || army._crossed) continue;
           const enemy = enemyOf(owner);
-          // 현재 칸에 적 유닛/적 포탑이 있으면 이동하지 않고 정지(전투 단계에서 교전).
           const enemyArmy = slot.armies[enemy];
           const enemyTower = slot.tower && slot.tower.owner === enemy;
           if ((enemyArmy && enemyArmy.count > 0) || enemyTower) continue;
           const ns = s + d;
           if (ns < 0 || ns >= C.SLOTS) continue;
-          const moveCount = army.marching;
-          const moveHp = moveCount * C.UNIT_HP; // 진군 병력은 풀피로 간주(주둔 시 회복)
-          // 출발 칸에서 차감
-          army.count -= moveCount;
-          army.marching = 0;
-          army.hp = army.count * C.UNIT_HP;
-          if (army.count <= 0) slot.armies[owner] = null;
-          // 도착 칸에 합류(계속 진군 상태로)
-          const dest = slots[ns];
-          if (!dest.armies[owner]) dest.armies[owner] = { hp: 0, count: 0, marching: 0 };
-          dest.armies[owner].count += moveCount;
-          dest.armies[owner].hp += moveHp;
-          dest.armies[owner].marching += moveCount; // 다음 턴 계속 진군
+          const mv = extractMoving(slot, owner, state);
+          placeMover(slots[ns], owner, mv, state);
         }
       }
+      // _crossed 플래그 정리
+      for (let s = 0; s < C.SLOTS; s++)
+        for (let o = 0; o < 2; o++) { const a = slots[s].armies[o]; if (a) delete a._crossed; }
     }
   }
 
@@ -287,70 +330,51 @@
       const slots = state.lines[l];
       for (let s = 0; s < C.SLOTS; s++) {
         const slot = slots[s];
-        // 본진 칸(0,4)은 resolveBase에서 처리
-        if (s === 0 || s === 4) continue;
-        const a0 = slot.armies[0];
-        const a1 = slot.armies[1];
-        // 유닛 vs 유닛
-        if (a0 && a0.count > 0 && a1 && a1.count > 0) {
-          fightToDeath(slot, l, s, state);
-        }
-        // 유닛 vs 포탑 (포탑 owner와 반대 owner 유닛)
+        if (s === 0 || s === 4) continue; // 본진 칸은 resolveBase
+        const a0 = slot.armies[0], a1 = slot.armies[1];
+        if (a0 && a0.count > 0 && a1 && a1.count > 0) fightToDeath(slot, l, s, state);
         if (slot.tower) {
           const attacker = enemyOf(slot.tower.owner);
           const army = slot.armies[attacker];
-          if (army && army.count > 0) {
-            fightArmyVsTower(slot, attacker, l, s, state);
-          }
+          if (army && army.count > 0) fightArmyVsTower(slot, attacker, l, s, state);
         }
       }
     }
   }
 
-  // 두 군대 동시교전 → 한쪽 전멸까지
   function fightToDeath(slot, line, s, state) {
-    let a = slot.armies[0], b = slot.armies[1];
-    let guard = 0;
-    while (a && a.count > 0 && b && b.count > 0 && guard++ < 100) {
-      const aAtk = a.count * C.UNIT_ATK;
-      const bAtk = b.count * C.UNIT_ATK;
-      a.hp -= bAtk;
-      b.hp -= aAtk;
-      a.count = a.hp > 0 ? Math.floor(a.hp / C.UNIT_HP) : 0;
-      b.count = b.hp > 0 ? Math.floor(b.hp / C.UNIT_HP) : 0;
-      if (a.count <= 0) { slot.armies[0] = null; a = null; }
-      if (b.count <= 0) { slot.armies[1] = null; b = null; }
-    }
-    // 생존측 hp 정규화(주둔/계속진군 시 정수 유지)
-    normalizeArmy(slot.armies[0]);
-    normalizeArmy(slot.armies[1]);
+    const a = slot.armies[0], b = slot.armies[1];
+    fightArmies(a, b, state, 0, 1);
+    if (a.count <= 0) slot.armies[0] = null;
+    if (b.count <= 0) slot.armies[1] = null;
+    normalizeArmy(slot.armies[0], state, 0);
+    normalizeArmy(slot.armies[1], state, 1);
     state.log.push(`${LINE_NAMES[line]} ${s}칸 교전`);
   }
 
-  // 군대 vs 라인 포탑 → 전멸까지(둘 중 하나 0)
+  // 군대 vs 라인 포탑(스택) → 전멸까지(둘 중 하나 0). 포탑 ATK=ceil(hp/20)*20.
   function fightArmyVsTower(slot, attacker, line, s, state) {
     const tower = slot.tower;
     let army = slot.armies[attacker];
     let guard = 0;
-    while (army && army.count > 0 && tower.hp > 0 && guard++ < 100) {
-      const aAtk = army.count * C.UNIT_ATK;
-      const tAtk = C.TOWER_ATK;
+    while (army && army.count > 0 && tower.hp > 0 && guard++ < 300) {
+      const aAtk = army.count * effAtk(state, attacker);
+      const tAtk = towerAtkOf(tower.hp);
       army.hp -= tAtk;
       tower.hp -= aAtk;
-      army.count = army.hp > 0 ? Math.floor(army.hp / C.UNIT_HP) : 0;
+      army.count = army.hp > 0 ? Math.floor(army.hp / effHp(state, attacker)) : 0;
       if (army.count <= 0) { slot.armies[attacker] = null; army = null; }
     }
     if (tower.hp <= 0) {
       slot.tower = null;
       state.log.push(`${LINE_NAMES[line]} 포탑 파괴`);
     }
-    normalizeArmy(slot.armies[attacker]);
+    normalizeArmy(slot.armies[attacker], state, attacker);
   }
 
-  function normalizeArmy(army) {
-    if (!army) return;
-    if (army.count <= 0) return;
-    army.hp = army.count * C.UNIT_HP; // 칩 데미지는 교전 중에만, 교전 종료 후 생존 유닛은 풀피
+  function normalizeArmy(army, state, side) {
+    if (!army || army.count <= 0) return;
+    army.hp = army.count * effHp(state, side); // 교전 종료 후 생존 유닛은 풀피
   }
 
   // 본진 칸 처리: 적 유닛이 본진 칸 도달 시 본진포탑 → 일꾼 → 본진
@@ -364,22 +388,23 @@
         const army = slot.armies[attacker];
         if (!army || army.count <= 0) continue;
         const dp = state.players[defender];
-        // 본진포탑이 있으면 먼저 교전
+        // 본진포탑(스택)이 있으면 먼저 교전
         if (dp.baseTower) {
           let guard = 0;
           let a = army;
-          while (a && a.count > 0 && dp.baseTower.hp > 0 && guard++ < 100) {
-            const aAtk = a.count * C.UNIT_ATK;
+          while (a && a.count > 0 && dp.baseTower.hp > 0 && guard++ < 300) {
+            const aAtk = a.count * effAtk(state, attacker);
+            const tAtk = towerAtkOf(dp.baseTower.hp);
             dp.baseTower.hp -= aAtk;
-            a.hp -= C.TOWER_ATK;
-            a.count = a.hp > 0 ? Math.floor(a.hp / C.UNIT_HP) : 0;
+            a.hp -= tAtk;
+            a.count = a.hp > 0 ? Math.floor(a.hp / effHp(state, attacker)) : 0;
             if (a.count <= 0) { slot.armies[attacker] = null; a = null; }
           }
           if (dp.baseTower.hp <= 0) {
             dp.baseTower = null;
             state.log.push(`P${defender} ${LINE_NAMES[l]} 본진포탑 파괴`);
           }
-          normalizeArmy(slot.armies[attacker]);
+          normalizeArmy(slot.armies[attacker], state, attacker);
         }
         // 본진포탑 없고 유닛 생존 → 일꾼 → 본진
         const survivors = slot.armies[attacker];
@@ -390,8 +415,9 @@
             dp.workers -= killed;
             state.log.push(`P${defender} 일꾼 ${killed} 사망`);
           } else {
-            dp.baseHp -= n * C.UNIT_ATK;
-            state.log.push(`P${defender} 본진 -${n * C.UNIT_ATK} (HP ${Math.max(0, dp.baseHp)})`);
+            const dmg = n * effAtk(state, attacker);
+            dp.baseHp -= dmg;
+            state.log.push(`P${defender} 본진 -${dmg} (HP ${Math.max(0, dp.baseHp)})`);
           }
         }
       }
@@ -412,18 +438,32 @@
       const p = state.players[side];
       const q = state.queues[side];
       p.workers += q.workers;
+      // 연구 완료(레벨 반영) — 유닛 생산 hp 적립 전에 적용
+      p.research.atk += q.research.atk;
+      const defGained = q.research.def;
+      p.research.def += defGained;
+      // 방어연구로 유효 HP 상승 시 보드 위 모든 군대 풀피로 갱신(count 일관성)
+      if (defGained > 0) {
+        for (let l = 0; l < C.LINES; l++)
+          for (let s = 0; s < C.SLOTS; s++) {
+            const a = state.lines[l][s].armies[side];
+            if (a && a.count > 0) a.hp = a.count * effHp(state, side);
+          }
+      }
       for (const u of q.units) {
         const slot = state.lines[u.line][spawnSlot(side)];
         if (!slot.armies[side]) slot.armies[side] = { hp: 0, count: 0, marching: 0 };
         slot.armies[side].count += 1;
-        slot.armies[side].hp += C.UNIT_HP;
+        slot.armies[side].hp += effHp(state, side);
       }
       for (const t of q.towers) {
         const slot = state.lines[t.line][spawnSlot(side)];
         if (!slot.tower) slot.tower = { owner: side, hp: C.TOWER_HP };
+        else slot.tower.hp += C.TOWER_HP; // 스택
       }
-      if (q.baseTower && !p.baseTower) {
-        p.baseTower = { hp: C.TOWER_HP };
+      if (q.baseTower > 0) {
+        if (!p.baseTower) p.baseTower = { hp: C.TOWER_HP * q.baseTower };
+        else p.baseTower.hp += C.TOWER_HP * q.baseTower;
       }
       // 정찰은 resolveScouts에서 처리(큐 유지) — 여기선 비우지 않음
       state.queues[side] = carryScouts(q);
@@ -436,21 +476,27 @@
     return nq;
   }
 
+  // 포탑 스택 회복: hp = min(ceil(hp/20)*20, hp + 2*ceil(hp/20))
+  function regenTower(hp) {
+    const cnt = towerCount(hp);
+    return Math.min(cnt * C.TOWER_HP, hp + C.TOWER_REGEN * cnt);
+  }
   function regenTowers(state) {
     for (let l = 0; l < C.LINES; l++) {
       for (let s = 0; s < C.SLOTS; s++) {
         const t = state.lines[l][s].tower;
-        if (t && t.hp < C.TOWER_HP) t.hp = Math.min(C.TOWER_HP, t.hp + C.TOWER_REGEN);
+        if (t) t.hp = regenTower(t.hp);
       }
     }
     for (let side = 0; side < 2; side++) {
       const bt = state.players[side].baseTower;
-      if (bt && bt.hp < C.TOWER_HP) bt.hp = Math.min(C.TOWER_HP, bt.hp + C.TOWER_REGEN);
+      if (bt) bt.hp = regenTower(bt.hp);
     }
   }
 
   // 6. 정찰: 정찰병이 라인을 적 본진 방향으로 통과하며 일방적으로 피해 받음.
   function resolveScouts(state) {
+    state.scoutAnim = []; // 애니메이션용(이번 턴)
     for (let side = 0; side < 2; side++) {
       const q = state.queues[side];
       const p = state.players[side];
@@ -458,6 +504,12 @@
         if (p.workers <= 0) continue; // 보낼 일꾼 없음
         const result = runScout(state, side, sc.line);
         state.intel[side][sc.line] = result.intel;
+        state.scoutAnim.push({
+          side, line: sc.line, events: result.events || [],
+          workerDied: result.workerDied,
+          reachedBase: result.intel.reachedBase, baseTowerSeen: result.intel.baseTowerSeen,
+          maxHp: scoutHpOf(state, side),
+        });
         if (result.workerDied) {
           p.workers -= 1;
           state.log.push(`P${side} ${LINE_NAMES[sc.line]} 정찰병 사망`);
@@ -473,61 +525,49 @@
     const enemy = enemyOf(side);
     const slots = state.lines[line];
     const d = dir(side);
-    let hp = C.SCOUT_HP;
+    let hp = scoutHpOf(state, side);
+    const maxHp = hp;
     const start = spawnSlot(side); // 자기 1칸에서 출발
     const enemyBase = enemyBaseSlot(side);
     const visible = {}; // slotIdx -> {count, tower}
+    const events = []; // 애니메이션용: 칸별 진행
     let death = null;
-    let fullBase = false;
 
-    // 자기 진영~중앙~적진 순으로 통과 (출발 칸 다음부터 적 본진까지)
     for (let s = start + d; ; s += d) {
       if (s === enemyBase) {
-        // 적 본진 도달
+        // 적 본진 도달 → 본진 정보 전부 획득
         const ep = state.players[enemy];
-        // 본진 정보 전부 획득
-        fullBase = true;
-        // 본진포탑 있으면 정찰병 사망(일꾼 손실), 없으면 무사 귀환
-        if (ep.baseTower) {
-          return {
-            intel: makeScoutIntel(line, visible, null, true, true),
-            workerDied: true,
-          };
-        } else {
-          return {
-            intel: makeScoutIntel(line, visible, null, true, false),
-            workerDied: false,
-          };
-        }
+        const baseInfo = {
+          hp: ep.baseHp, workers: ep.workers,
+          research: { atk: ep.research.atk, def: ep.research.def },
+          baseTowerHp: ep.baseTower ? ep.baseTower.hp : 0,
+        };
+        const seen = !!ep.baseTower;
+        events.push({ slot: enemyBase, base: true, dmg: seen ? towerAtkOf(ep.baseTower.hp) : 0, hpAfter: seen ? 0 : hp, result: seen ? "die" : "return" });
+        return { intel: makeScoutIntel(line, visible, null, true, seen, baseInfo), workerDied: seen, events };
       }
       if (s < 0 || s >= C.SLOTS) break;
       const slot = slots[s];
       const army = slot.armies[enemy];
       const towerHere = slot.tower && slot.tower.owner === enemy ? slot.tower : null;
+      const enemyCount = army ? army.count : 0;
       let dmg = 0;
-      if (army && army.count > 0) dmg += army.count * C.UNIT_ATK;
-      if (towerHere) dmg += C.TOWER_ATK;
+      if (enemyCount > 0) dmg += enemyCount * effAtk(state, enemy);
+      if (towerHere) dmg += towerAtkOf(towerHere.hp);
       hp -= dmg;
       if (hp <= 0) {
-        // 이 칸에서 사망 → 위치만, 수 미공개
         death = { slot: s };
-        return {
-          intel: makeScoutIntel(line, visible, death, false, false),
-          workerDied: true,
-        };
+        events.push({ slot: s, enemyCount, tower: !!towerHere, dmg, hpAfter: 0, result: "die" });
+        return { intel: makeScoutIntel(line, visible, death, false, false, null), workerDied: true, events };
       }
-      // 살아남음 → 이 칸 내용 정확히 기록
-      visible[s] = {
-        count: army ? army.count : 0,
-        tower: !!towerHere,
-      };
+      visible[s] = { count: enemyCount, tower: !!towerHere };
+      events.push({ slot: s, enemyCount, tower: !!towerHere, dmg, hpAfter: hp, result: "pass" });
     }
-    // 루프가 비정상 종료(도달 못함) → 무사 귀환 처리
-    return { intel: makeScoutIntel(line, visible, null, false, false), workerDied: false };
+    return { intel: makeScoutIntel(line, visible, null, false, false, null), workerDied: false, events };
   }
 
-  function makeScoutIntel(line, visible, death, reachedBase, baseTowerSeen) {
-    return { line, turn: null, visible, death, reachedBase, baseTowerSeen };
+  function makeScoutIntel(line, visible, death, reachedBase, baseTowerSeen, baseInfo) {
+    return { line, turn: null, visible, death, reachedBase, baseTowerSeen, baseInfo: baseInfo || null };
   }
 
   function checkVictory(state) {
@@ -573,6 +613,7 @@
       reserve: 2,
       defends: true,
       scoutChance: 0.1,
+      researchChance: 0.3,   // 여유 자금으로 업그레이드
     },
     timing: {
       name: "타이밍러쉬",
@@ -583,6 +624,7 @@
       reserve: 0,
       defends: true,
       scoutChance: 0.15,
+      researchChance: 0.15,
     },
     scout: {
       name: "정찰형",
@@ -594,6 +636,7 @@
       defends: true,
       scoutChance: 0.5,
       opportunist: true,     // 정찰 정보로 약한 라인 집중
+      researchChance: 0.15,
     },
   };
 
@@ -704,11 +747,18 @@
       return { type: "scout", line: randInt(rng, C.LINES) };
     }
 
-    // 5) 유닛 생산 — 한 라인에 몰아주기(모아치기 준비)
+    // 4.5) 연구(여유 자금 + 성향) — 공격/방어 번갈아
+    if (ps.researchChance && p.gold >= C.COST_RESEARCH + C.COST_UNIT && rng() < ps.researchChance) {
+      const branch = (p.research.atk <= p.research.def) ? "atk" : "def";
+      return { type: "research", branch };
+    }
+
+    // 5) 유닛 생산 — 한 라인에 몰아주기(모아치기 준비), 한 번에 최대 3마리
     if (p.gold >= C.COST_UNIT) {
       let target = 0, best = -1;
       for (let l = 0; l < C.LINES; l++) if (garr[l] > best) { best = garr[l]; target = l; }
-      return { type: "unit", line: target };
+      const n = Math.min(3, Math.floor(p.gold / C.COST_UNIT));
+      return { type: "unit", line: target, count: n };
     }
 
     return null;

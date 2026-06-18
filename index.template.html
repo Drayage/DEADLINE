@@ -70,6 +70,10 @@
   @keyframes pop{0%{transform:translate(-50%,-50%) scale(.3); opacity:0}50%{transform:translate(-50%,-50%) scale(1.4); opacity:1}100%{transform:translate(-50%,-50%) scale(1)}}
   .fogmark{font-size:20px; opacity:.4; margin:auto}
   .fogtxt{font-size:10px; color:var(--muted); margin:auto}
+  .scoutmk{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:3;
+    background:rgba(20,26,38,.95); border:1px solid var(--gold); color:var(--gold);
+    padding:2px 6px; border-radius:8px; font-size:11px; font-weight:800; white-space:nowrap;
+    animation:pop .4s}
   .phasebadge{position:fixed; top:64px; left:50%; transform:translateX(-50%); z-index:45;
     background:#1b2435; border:1px solid var(--p0); padding:8px 20px; border-radius:20px; font-weight:800;
     opacity:0; transition:.2s}
@@ -196,6 +200,8 @@
         <div class="res"><span class="ico">⛏️</span><div><div class="v" id="myWorkers">5</div><small>일꾼 +<span id="myInc">50</span>/턴</small></div></div>
         <div class="res"><span class="ico">🏰</span><div><div class="v" id="myBase">30</div><small>본진 HP</small></div></div>
         <div class="res"><span class="ico">🛡️</span><div><div class="v" id="myBT">–</div><small>본진포탑</small></div></div>
+        <div class="res"><span class="ico">🗡️</span><div><div class="v" id="myResA">0</div><small>공격연구</small></div></div>
+        <div class="res"><span class="ico">🛡️</span><div><div class="v" id="myResD">0</div><small>방어연구</small></div></div>
       </div>
     </div>
   </div>
@@ -205,9 +211,14 @@
       <h2>행동 — 턴당 2회</h2>
       <div class="actions">
         <div class="arow"><button id="bWorker"><span class="btn-ico">⛏️</span>일꾼</button><span class="cost">50G · +10/턴</span></div>
-        <div class="arow"><button id="bUnit"><span class="btn-ico">⚔️</span>유닛</button><select id="unitLine"></select><span class="cost">50G</span></div>
-        <div class="arow"><button id="bTower"><span class="btn-ico">🛡️</span>포탑</button><select id="towerLine"></select><span class="cost">100G·내1칸</span></div>
-        <div class="arow"><button id="bBaseTower"><span class="btn-ico">🏯</span>본진포탑</button><span class="cost">100G</span></div>
+        <div class="arow"><button id="bUnit"><span class="btn-ico">⚔️</span>유닛</button><select id="unitLine"></select>
+          ×<input type="number" id="unitCount" min="1" max="3" value="1" style="width:46px" /><span class="cost">50G/기</span></div>
+        <div class="arow"><button id="bTower"><span class="btn-ico">🛡️</span>포탑</button><select id="towerLine"></select>
+          ×<input type="number" id="towerCount" min="1" max="3" value="1" style="width:46px" /><span class="cost">100G·내1칸</span></div>
+        <div class="arow"><button id="bBaseTower"><span class="btn-ico">🏯</span>본진포탑</button>
+          ×<input type="number" id="baseTowerCount" min="1" max="3" value="1" style="width:46px" /><span class="cost">100G</span></div>
+        <div class="arow"><button id="bResAtk"><span class="btn-ico">🗡️</span>공격연구</button>
+          <button id="bResDef"><span class="btn-ico">🛡️</span>방어연구</button><span class="cost">각 100G·+2</span></div>
         <div class="arow"><button id="bScout"><span class="btn-ico">🔭</span>정찰</button><select id="scoutLine"></select><span class="cost">일꾼1 위험</span></div>
         <div class="arow"><button id="bAttack" class="danger"><span class="btn-ico">💥</span>공격</button>
           <select id="attackLine"></select>
@@ -329,6 +340,10 @@ async function endTurn() {
       st.apply();
       render();
       await playCombat(engs, before);
+    } else if (st.name === "정찰") {
+      st.apply();
+      render();
+      await animateScouts();
     } else {
       st.apply();
       render();
@@ -413,6 +428,34 @@ async function showCombat(where, meB, foeB, meA, foeA, e) {
   await sleep(200);
 }
 
+// 정찰 애니메이션: 내 정찰병이 라인을 통과하는 연출(칸별 🔭 + HP)
+async function animateScouts() {
+  const list = (state.scoutAnim || []).filter(s => s.side === SIDE);
+  if (!list.length) { await sleep(200); return; }
+  for (const sc of list) {
+    await showPhase(`🔭 ${LINE_NAMES[sc.line]} 정찰`);
+    for (const ev of sc.events) {
+      const key = ev.slot === 0 ? "basemine" : ev.slot === 4 ? "baseenemy" : `${sc.line}-${ev.slot}`;
+      const cell = document.querySelector(`[data-cell="${key}"]`);
+      if (cell) {
+        const mk = document.createElement("div");
+        mk.className = "scoutmk";
+        const label = ev.result === "die" ? "🔭💥" :
+          ev.result === "return" ? `🔭 귀환 HP${ev.hpAfter}` : `🔭 HP${ev.hpAfter}`;
+        mk.textContent = label;
+        cell.appendChild(mk);
+        setTimeout(() => mk.remove(), 760);
+      }
+      await sleep(560);
+    }
+    if (sc.reachedBase) toast(`${LINE_NAMES[sc.line]} 적 본진 도달 — 정보 확보${sc.workerDied ? " (정찰병 전사)" : " (무사 귀환)"}`);
+    else if (sc.workerDied) toast(`${LINE_NAMES[sc.line]} 정찰병 사망`, true);
+    else toast(`${LINE_NAMES[sc.line]} 정찰 귀환`);
+    render();
+    await sleep(450);
+  }
+}
+
 function combatVerdict(meB, foeB, meA, foeA) {
   const meNum = typeof meA === "number", foeNum = typeof foeA === "number";
   if (meNum && meA <= 0 && foeNum && foeA <= 0) return "동귀어진!";
@@ -448,7 +491,9 @@ function render() {
   setText("myWorkers", p.workers);
   setText("myInc", p.workers * C.GOLD_PER_WORKER);
   setText("myBase", Math.max(0, p.baseHp));
-  setText("myBT", p.baseTower ? p.baseTower.hp : "–");
+  setText("myBT", p.baseTower ? `${Math.ceil(p.baseTower.hp/C.TOWER_HP)}개(${p.baseTower.hp})` : "–");
+  setText("myResA", p.research.atk);
+  setText("myResD", p.research.def);
   renderField();
   renderQueue();
   renderIntel();
@@ -483,6 +528,13 @@ function stackHtml(owner, army) {
   const g = army.marching ? "👣" : unitGlyph(army.count);
   return `<div class="stack ${cls} ${army.marching?'march':''}"><span class="glyph">${g}</span><span class="cnt">${army.count}</span></div>`;
 }
+// 포탑 스택 표시: 아이콘 + ×개수 + 총 HP바(최대 = 개수*20)
+function towerHtml(cls, glyph, hp) {
+  const cnt = Math.ceil(hp / C.TOWER_HP);
+  const max = cnt * C.TOWER_HP;
+  const badge = cnt > 1 ? `<span class="cnt">×${cnt}</span>` : "";
+  return `<div class="tower ${cls}"><span class="tg">${glyph}</span>${badge}${hpBar(hp, max)}</div>`;
+}
 
 function renderField() {
   const q = state.queues[SIDE];
@@ -495,18 +547,19 @@ function renderField() {
   for (let l = 0; l < C.LINES; l++) { const a = state.lines[l][0].armies[AI]; if (a && a.count) atkOnMe += a.count; }
   html += `<div class="basecell mine" data-cell="basemine"><span class="blabel">내 본진</span>`
         + `<div class="fort">🏰</div>${hpBar(me.baseHp, C.BASE_HP)}<div class="hplabel">HP ${Math.max(0,me.baseHp)}</div>`;
-  if (me.baseTower) html += `<div class="tower t0"><span class="tg">🏯</span>${hpBar(me.baseTower.hp, C.TOWER_HP)}</div>`;
+  if (me.baseTower) html += towerHtml("t0", "🏯", me.baseTower.hp);
   if (atkOnMe) html += `<div class="stack u1"><span class="glyph">💥</span><span class="cnt">${atkOnMe}</span></div>`;
   html += `</div>`;
 
-  // 적 본진(우) — 안개. 보일 때만 HP/본진포탑 공개.
+  // 적 본진(우) — 안개. 보일 때만 HP/일꾼/연구/본진포탑 공개.
   const seen = enemyBaseVisible();
   let myAtEn = 0;
   for (let l = 0; l < C.LINES; l++) { const a = state.lines[l][4].armies[SIDE]; if (a && a.count) myAtEn += a.count; }
   html += `<div class="basecell enemy" data-cell="baseenemy"><span class="blabel">적 본진</span><div class="fort">🏰</div>`;
   if (seen) {
     html += `${hpBar(en.baseHp, C.BASE_HP)}<div class="hplabel">HP ${Math.max(0,en.baseHp)}</div>`;
-    if (en.baseTower) html += `<div class="tower t1"><span class="tg">🏯</span>${hpBar(en.baseTower.hp, C.TOWER_HP)}</div>`;
+    html += `<div class="hplabel">⛏️${en.workers} 🗡️${en.research.atk} 🛡️${en.research.def}</div>`;
+    if (en.baseTower) html += towerHtml("t1", "🏯", en.baseTower.hp);
   } else {
     html += `<div class="fogtxt">🌫️ 미확인</div>`;
   }
@@ -528,7 +581,7 @@ function renderField() {
       let cls = "cell" + (s === 2 ? " center" : "") + (visible ? "" : " fog");
       let left = "", right = "";
       // 왼쪽 = 나
-      if (mineTower) left += `<div class="tower t0"><span class="tg">🛡️</span>${hpBar(mineTower.hp, C.TOWER_HP)}</div>`;
+      if (mineTower) left += towerHtml("t0", "🛡️", mineTower.hp);
       if (mineArmy && mineArmy.count) left += stackHtml(SIDE, mineArmy);
       // 내 생산 예약(내 1칸)
       if (s === 1) {
@@ -538,7 +591,7 @@ function renderField() {
       }
       // 오른쪽 = 적 (시야 있을 때만)
       if (visible) {
-        if (enTower) right += `<div class="tower t1"><span class="tg">🛡️</span>${hpBar(enTower.hp, C.TOWER_HP)}</div>`;
+        if (enTower) right += towerHtml("t1", "🛡️", enTower.hp);
         if (enArmy && enArmy.count) right += stackHtml(AI, enArmy);
       }
       let inner = `<span class="pos">${posName[s]}</span><div class="zoneL">${left}</div>`;
@@ -560,10 +613,13 @@ function renderControls() {
   const p = state.players[SIDE];
   const block = gameOver || animating;
   const can = (cost) => !block && actsLeft() > 0 && p.gold >= cost;
+  const qty = (id) => Math.max(1, Math.min(3, +document.getElementById(id).value || 1));
   dis("bWorker", !can(C.COST_WORKER));
-  dis("bUnit", !can(C.COST_UNIT));
-  dis("bTower", !can(C.COST_TOWER));
-  dis("bBaseTower", !can(C.COST_BASE_TOWER) || !!p.baseTower);
+  dis("bUnit", !can(C.COST_UNIT * qty("unitCount")));
+  dis("bTower", !can(C.COST_TOWER * qty("towerCount")));
+  dis("bBaseTower", !can(C.COST_BASE_TOWER * qty("baseTowerCount")));
+  dis("bResAtk", !can(C.COST_RESEARCH));
+  dis("bResDef", !can(C.COST_RESEARCH));
   dis("bScout", block || actsLeft() <= 0 || p.workers < 1);
   dis("bAttack", block || actsLeft() <= 0);
   dis("bEnd", block);
@@ -627,14 +683,17 @@ function bind(){
   ["unitLine","towerLine","scoutLine","attackLine"].forEach(fillLineSelect);
   fillStyleSelect("simA","rush"); fillStyleSelect("simB","turtle");
   const L = i => LINE_NAMES[i];
+  const qty = id => Math.max(1, Math.min(3, +v(id) || 1));
   on("bWorker", () => doAction({type:"worker"}, "일꾼 생산"));
-  on("bUnit", () => { const l=+v("unitLine"); doAction({type:"unit",line:l}, `유닛 생산(${L(l)})`); });
-  on("bTower", () => { const l=+v("towerLine"); doAction({type:"tower",line:l}, `포탑 건설(${L(l)})`); });
-  on("bBaseTower", () => doAction({type:"baseTower"}, "본진포탑 건설"));
+  on("bUnit", () => { const l=+v("unitLine"), c=qty("unitCount"); doAction({type:"unit",line:l,count:c}, `유닛 ${c}기(${L(l)})`); });
+  on("bTower", () => { const l=+v("towerLine"), c=qty("towerCount"); doAction({type:"tower",line:l,count:c}, `포탑 ${c}개(${L(l)})`); });
+  on("bBaseTower", () => { const c=qty("baseTowerCount"); doAction({type:"baseTower",count:c}, `본진포탑 ${c}개`); });
+  on("bResAtk", () => doAction({type:"research",branch:"atk"}, "공격연구 +2"));
+  on("bResDef", () => doAction({type:"research",branch:"def"}, "방어연구 +2"));
   on("bScout", () => { const l=+v("scoutLine"); doAction({type:"scout",line:l}, `정찰(${L(l)})`); });
   on("bAttack", () => { const l=+v("attackLine"); const c=+v("attackCount")||1;
     doAction({type:"attack",line:l,count:c}, `공격 ${c}기(${L(l)})`); });
-  document.getElementById("attackLine").onchange = renderControls;
+  ["attackLine","unitCount","towerCount","baseTowerCount"].forEach(id=>{ document.getElementById(id).onchange = renderControls; });
   on("bEnd", endTurn); on("bUndo", undo); on("bNew", newGame);
   on("bSim", () => {
     const r = E.simulate(v("simA"), v("simB"), +v("simN")||100);
