@@ -666,6 +666,18 @@
       scoutChance: 0.15,
       researchChance: 0.15,
     },
+    greedyTurtle: {
+      name: "무정찰배째기",
+      targetWorkers: 12,
+      greedUntil: 8,            // 일꾼 먼저(2+1=8) 모은 뒤 본진포탑 → "일꾼2-일꾼1-포탑"
+      wantBaseTower: true,
+      atkSize: [5, 6],
+      reserve: 3,
+      defends: true,
+      wantLineTower: true,
+      reinforceWhenHit: true,   // 본진포탑이 피격되면 돈 모아 본진포탑 1개 추가
+      scoutChance: 0,           // 무정찰
+    },
     scout: {
       name: "정찰형",
       targetWorkers: 8,
@@ -785,6 +797,19 @@
     // 0.7) 여유 자금 → 본진포탑 스택 보강(방어 성향)
     if (ps.stackBaseTower && p.baseTower && p.gold >= C.COST_BASE_TOWER + 100 && totalThreat >= 3) {
       return { type: "baseTower", count: 1 };
+    }
+
+    // 0.7b) 본진포탑 피격 대응(무정찰배째기): 본진포탑이 데미지를 입었거나 본진 코앞에
+    //       위협이 있으면, 돈을 모아 본진포탑 1개를 더 올린다. 모으는 동안은 다른 데 안 씀.
+    if (ps.reinforceWhenHit && p.baseTower) {
+      const full = Math.ceil(p.baseTower.hp / C.TOWER_HP) * C.TOWER_HP;
+      const underAttack = (p.baseTower.hp < full && totalThreat > 0) || urgent > 0;
+      if (underAttack) {
+        if (p.gold >= C.COST_BASE_TOWER && !state.queues[side].baseTower) {
+          return { type: "baseTower", count: 1, _defense: true };
+        }
+        return null; // 돈 모으는 중 — 본진포탑 추가를 위해 저축
+      }
     }
 
     // 1) 공격: 임계 이상 모인 라인이 있으면(예비 reserve 남기고) 모은 병력 모아치기
