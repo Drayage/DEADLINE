@@ -45,19 +45,50 @@
   .res small{color:var(--muted)}
   .res.gold .v{color:var(--gold)}
 
-  /* 전장 */
-  .field{display:flex; flex-direction:column; gap:14px}
-  .lane{display:grid; grid-template-columns:64px repeat(5,1fr); gap:8px; align-items:stretch}
-  .lane .lname{display:flex; align-items:center; justify-content:center; color:var(--muted);
-    font-size:13px; writing-mode:vertical-rl; text-orientation:upright; letter-spacing:2px}
-  .cell{position:relative; min-height:84px; border-radius:10px; padding:6px;
-    background:#0c111c; border:1px solid var(--line);
-    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px}
-  .cell.base{background:linear-gradient(180deg,#10182a,#0a0f1a); border-color:#2b3850}
-  .cell.mybase{box-shadow:inset 0 0 0 2px var(--p0d)}
-  .cell.aibase{box-shadow:inset 0 0 0 2px var(--p1d)}
+  /* 전장: 좌우 단일 본진 + 가운데 3라인 */
+  .field{display:grid; grid-template-columns:108px 34px 1fr 1fr 1fr 108px;
+    grid-auto-rows:80px; gap:8px; align-items:stretch}
+  .basecell{border-radius:12px; padding:8px 6px; position:relative;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px}
+  .basecell .blabel{position:absolute; top:7px; font-size:10px; letter-spacing:1px; color:var(--muted)}
+  .basecell.mine{grid-column:1; grid-row:1 / span 3;
+    background:linear-gradient(180deg,#10203a,#0a0f1a); box-shadow:inset 0 0 0 2px var(--p0d)}
+  .basecell.enemy{grid-column:6; grid-row:1 / span 3;
+    background:linear-gradient(180deg,#3a1112,#0a0f1a); box-shadow:inset 0 0 0 2px var(--p1d)}
+  .llabel{grid-column:2; display:flex; align-items:center; justify-content:center;
+    color:var(--muted); font-size:12px; writing-mode:vertical-rl; text-orientation:upright; letter-spacing:2px}
+  .cell{position:relative; border-radius:10px; padding:4px 6px; background:#0c111c; border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:space-between; gap:2px}
   .cell.center{background:#0a0f1a}
-  .cell .pos{position:absolute; top:4px; left:6px; font-size:9px; color:#46546b; letter-spacing:1px}
+  .cell.fog{background:repeating-linear-gradient(45deg,#0b0f18,#0b0f18 7px,#0d121d 7px,#0d121d 14px); border-style:dashed}
+  .cell .pos{position:absolute; top:3px; left:6px; font-size:9px; color:#46546b; letter-spacing:1px; z-index:1}
+  .cell .zoneL{display:flex; flex-direction:column; align-items:flex-start; gap:2px}
+  .cell .zoneR{display:flex; flex-direction:column; align-items:flex-end; gap:2px}
+  .cell.fighting{border-color:var(--bad); box-shadow:0 0 0 2px var(--bad), 0 0 18px rgba(255,91,82,.6); animation:shake .35s}
+  .cell .clash{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); font-size:26px; z-index:2; animation:pop .5s ease-out}
+  @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
+  @keyframes pop{0%{transform:translate(-50%,-50%) scale(.3); opacity:0}50%{transform:translate(-50%,-50%) scale(1.4); opacity:1}100%{transform:translate(-50%,-50%) scale(1)}}
+  .fogmark{font-size:20px; opacity:.4; margin:auto}
+  .fogtxt{font-size:10px; color:var(--muted); margin:auto}
+  .phasebadge{position:fixed; top:64px; left:50%; transform:translateX(-50%); z-index:45;
+    background:#1b2435; border:1px solid var(--p0); padding:8px 20px; border-radius:20px; font-weight:800;
+    opacity:0; transition:.2s}
+  .phasebadge.show{opacity:1}
+
+  /* 교전 화면 */
+  .combat{position:fixed; inset:0; z-index:48; display:flex; align-items:center; justify-content:center;
+    background:rgba(4,7,12,.7); opacity:0; pointer-events:none; transition:.18s}
+  .combat.show{opacity:1}
+  .combat .panel{width:min(440px,90vw); background:linear-gradient(180deg,#1a1320,#0c0a12);
+    border:1px solid var(--p1); border-radius:16px; padding:22px; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,.6)}
+  .combat .where{color:var(--muted); font-size:13px; letter-spacing:2px; margin-bottom:14px}
+  .combat .vs{display:flex; align-items:center; justify-content:space-around; font-size:15px}
+  .combat .army{display:flex; flex-direction:column; gap:6px; min-width:120px}
+  .combat .army .big{font-size:34px; font-weight:900}
+  .combat .army.me .big{color:var(--p0)} .combat .army.foe .big{color:var(--p1)}
+  .combat .army .arrow{font-size:13px; color:var(--muted)}
+  .combat .swords{font-size:40px; animation:pop .5s}
+  .combat .result{margin-top:16px; font-size:15px; font-weight:800; color:var(--gold)}
 
   /* 유닛 토큰 */
   .stack{display:flex; align-items:center; gap:5px; font-weight:800}
@@ -148,12 +179,13 @@
       <h2>전장</h2>
       <div class="field" id="field"></div>
       <div class="legend">
-        <span><b style="color:var(--p0)">●</b> 나</span>
-        <span><b style="color:var(--p1)">●</b> AI</span>
+        <span><b style="color:var(--p0)">●</b> 나(왼쪽)</span>
+        <span><b style="color:var(--p1)">●</b> 적(오른쪽)</span>
         <span>🛡 포탑</span>
         <span>🏰 본진</span>
         <span>👣 진군중</span>
-        <span>⏳ 이번 턴 생산예약(다음 턴 등장)</span>
+        <span>🌫️ 안개(내 유닛/포탑 없으면 비공개)</span>
+        <span>⏳ 생산예약</span>
       </div>
     </div>
 
@@ -219,6 +251,18 @@
 </div>
 
 <div id="toast"></div>
+<div class="phasebadge" id="phase"></div>
+<div class="combat" id="combat">
+  <div class="panel">
+    <div class="where" id="combatWhere">교전</div>
+    <div class="vs">
+      <div class="army me"><div class="big" id="cMe">0</div><div class="arrow">나 ▶</div></div>
+      <div class="swords" id="cSwords">⚔️</div>
+      <div class="army foe"><div class="big" id="cFoe">0</div><div class="arrow">◀ 적</div></div>
+    </div>
+    <div class="result" id="combatResult"></div>
+  </div>
+</div>
 <div id="bannerSlot"></div>
 
 <script>
@@ -420,6 +464,49 @@
     checkVictory(state);
     state.turn += 1;
     return state;
+  }
+
+  // 애니메이션용: 턴 해결을 단계별 클로저로 반환(UI가 사이사이 렌더/딜레이).
+  // 순서는 resolveTurn과 동일하게 유지.
+  function resolveTurnSteps(state) {
+    return [
+      { name: "이동", apply: () => resolveMovement(state) },
+      { name: "전투", apply: () => { resolveCombat(state); resolveBase(state); } },
+      { name: "수입", apply: () => collectIncome(state) },
+      { name: "생산", apply: () => { completeProduction(state); regenTowers(state); } },
+      { name: "정찰", apply: () => resolveScouts(state) },
+      { name: "종료", apply: () => { checkVictory(state); state.turn += 1; } },
+    ];
+  }
+
+  // 현재 상태에서 이번 전투 단계에 벌어질 교전 칸 목록(전투 적용 전 호출).
+  function detectEngagements(state) {
+    const out = [];
+    for (let l = 0; l < C.LINES; l++) {
+      for (let s = 0; s < C.SLOTS; s++) {
+        const slot = state.lines[l][s];
+        const a0 = slot.armies[0], a1 = slot.armies[1];
+        if (s === 0 || s === 4) {
+          // 본진 칸: 공격측 유닛 vs 방어측 본진포탑/일꾼/본진
+          const defender = s === 0 ? 0 : 1;
+          const atk = slot.armies[enemyOf(defender)];
+          if (atk && atk.count > 0) {
+            out.push({ line: l, slot: s, base: true, defender,
+              attacker: enemyOf(defender), atkCount: atk.count });
+          }
+          continue;
+        }
+        const uVsU = a0 && a0.count > 0 && a1 && a1.count > 0;
+        const tower = slot.tower;
+        const uVsT = tower && slot.armies[enemyOf(tower.owner)] && slot.armies[enemyOf(tower.owner)].count > 0;
+        if (uVsU || uVsT) {
+          out.push({ line: l, slot: s, base: false,
+            c0: a0 ? a0.count : 0, c1: a1 ? a1.count : 0,
+            tower: tower ? { owner: tower.owner, hp: tower.hp } : null });
+        }
+      }
+    }
+    return out;
   }
 
   // 2. 이동: marching 병력을 진군 방향으로 1칸 이동.
@@ -966,6 +1053,8 @@
     createState,
     applyAction,
     resolveTurn,
+    resolveTurnSteps,
+    detectEngagements,
     resolveMovement,
     resolveCombat,
     resolveBase,
@@ -1007,7 +1096,7 @@ function newGame() {
 function actsLeft() { return C.ACTIONS_PER_TURN - pending.length; }
 
 function doAction(action, label) {
-  if (gameOver) return;
+  if (gameOver || animating) return;
   if (actsLeft() <= 0) return toast("행동을 모두 사용했어 (턴당 2회)", true);
   const res = E.applyAction(state, SIDE, action);
   if (!res.ok) return toast(res.reason, true);
@@ -1024,16 +1113,120 @@ function undo() {
   render();
 }
 
-function endTurn() {
-  if (gameOver) return;
-  E.aiTakeTurn(state, AI, aiStyle, Math.random);
-  const before = state.log.length;
-  E.resolveTurn(state, Math.random);
-  for (let i = before; i < state.log.length; i++) logRaw(state.log[i]);
+let animating = false;
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+async function endTurn() {
+  if (gameOver || animating) return;
+  animating = true;
   pending = [];
+  renderControls();
+  // AI 행동 결정(비공개)
+  E.aiTakeTurn(state, AI, aiStyle, Math.random);
+
+  const steps = E.resolveTurnSteps(state);
+  const logStart = state.log.length;
+  for (const st of steps) {
+    if (st.name === "종료") { st.apply(); break; }
+    await showPhase(st.name);
+    if (st.name === "전투") {
+      // 전투 적용 전 교전 칸 캡처 → 적용 → 연출
+      const engs = E.detectEngagements(state);
+      const before = snapshotCounts(engs);
+      st.apply();
+      render();
+      await playCombat(engs, before);
+    } else {
+      st.apply();
+      render();
+      await sleep(st.name === "이동" ? 650 : 450);
+    }
+  }
+  hidePhase();
+  // 새 로그 출력
+  for (let i = logStart; i < state.log.length; i++) logRaw(state.log[i]);
+
+  animating = false;
   if (state.winner !== null) return endGame();
   turnSnapshot = JSON.stringify(state);
   render();
+}
+
+// 전투 전 카운트 스냅샷(결과 비교용)
+function snapshotCounts(engs) {
+  return engs.map(e => {
+    if (e.base) return { atk: e.atkCount };
+    return { c0: e.c0, c1: e.c1, tower: e.tower ? e.tower.hp : null };
+  });
+}
+
+// 교전 연출: 칸 강조 + 교전 화면(나 vs 적, 결과)
+async function playCombat(engs, before) {
+  if (!engs.length) { await sleep(300); return; }
+  for (let i = 0; i < engs.length; i++) {
+    const e = engs[i];
+    flashCell(e.line, e.slot);
+    const after = state.lines[e.line][e.slot];
+    let meBefore, foeBefore, meAfter, foeAfter, where;
+    where = `${LINE_NAMES[e.line]} · ${["내 본진","내 1칸","중앙","적 1칸","적 본진"][e.slot]}`;
+    if (e.base) {
+      // 본진 교전: 공격측이 적이면 나=수비, 공격측이 나면 내가 공격
+      const iAmDefender = (e.defender === SIDE);
+      const atkAfter = after.armies[e.attacker];
+      if (iAmDefender) { meBefore = "🏰"; foeBefore = before[i].atk; meAfter = "🏰"; foeAfter = atkAfter ? atkAfter.count : 0; }
+      else { meBefore = before[i].atk; foeBefore = "🏰"; meAfter = atkAfter ? atkAfter.count : 0; foeAfter = "🏰"; }
+    } else {
+      meBefore = before[i].c0; foeBefore = before[i].c1;
+      meAfter = after.armies[0] ? after.armies[0].count : 0;
+      foeAfter = after.armies[1] ? after.armies[1].count : 0;
+    }
+    await showCombat(where, meBefore, foeBefore, meAfter, foeAfter, e);
+  }
+}
+
+function showPhase(name) {
+  const el = document.getElementById("phase");
+  el.textContent = "▶ " + name + " 단계";
+  el.className = "phasebadge show";
+  return sleep(380);
+}
+function hidePhase() { document.getElementById("phase").className = "phasebadge"; }
+
+function flashCell(line, slot) {
+  const key = slot === 0 ? "basemine" : slot === 4 ? "baseenemy" : `${line}-${slot}`;
+  const cell = document.querySelector(`[data-cell="${key}"]`);
+  if (!cell) return;
+  cell.classList.add("fighting");
+  const clash = document.createElement("div");
+  clash.className = "clash"; clash.textContent = "⚔️";
+  cell.appendChild(clash);
+  setTimeout(() => { cell.classList.remove("fighting"); clash.remove(); }, 700);
+}
+
+async function showCombat(where, meB, foeB, meA, foeA, e) {
+  const ov = document.getElementById("combat");
+  document.getElementById("combatWhere").textContent = where;
+  document.getElementById("cMe").textContent = meB;
+  document.getElementById("cFoe").textContent = foeB;
+  document.getElementById("combatResult").textContent = "";
+  ov.className = "combat show";
+  await sleep(700);
+  // 결과 표시
+  document.getElementById("cMe").textContent = meA;
+  document.getElementById("cFoe").textContent = foeA;
+  document.getElementById("combatResult").textContent = combatVerdict(meB, foeB, meA, foeA);
+  await sleep(900);
+  ov.className = "combat";
+  await sleep(200);
+}
+
+function combatVerdict(meB, foeB, meA, foeA) {
+  const meNum = typeof meA === "number", foeNum = typeof foeA === "number";
+  if (meNum && meA <= 0 && foeNum && foeA <= 0) return "동귀어진!";
+  if (meNum && meA <= 0) return "내 병력 전멸…";
+  if (foeNum && foeA <= 0) return "적 격파!";
+  if (foeA === "🏰") return "본진포탑 공방";
+  return "교전 지속";
 }
 
 function endGame() {
@@ -1077,51 +1270,89 @@ function hpBar(hp, max) {
 
 function unitGlyph(n) { return n >= 3 ? "⚔️" : (n === 2 ? "🗡️" : "🪖"); }
 
+// 시야: 어떤 칸의 적 정보는 그 칸에 내 유닛 또는 내 포탑이 있을 때만 보인다.
+function canSee(line, slot) {
+  const a = state.lines[line][slot].armies[SIDE];
+  if (a && a.count > 0) return true;
+  const t = state.lines[line][slot].tower;
+  if (t && t.owner === SIDE) return true;
+  return false;
+}
+// 적 본진 시야: 내 유닛이 적 본진 칸에 있거나 정찰로 본진 도달한 적 있으면.
+function enemyBaseVisible() {
+  for (let l = 0; l < C.LINES; l++) { const a = state.lines[l][4].armies[SIDE]; if (a && a.count) return true; }
+  const intel = state.intel[SIDE];
+  for (let l = 0; l < C.LINES; l++) if (intel[l] && intel[l].reachedBase) return true;
+  return false;
+}
+function stackHtml(owner, army) {
+  const cls = owner === SIDE ? "u0" : "u1";
+  const g = army.marching ? "👣" : unitGlyph(army.count);
+  return `<div class="stack ${cls} ${army.marching?'march':''}"><span class="glyph">${g}</span><span class="cnt">${army.count}</span></div>`;
+}
+
 function renderField() {
   const q = state.queues[SIDE];
+  const me = state.players[SIDE], en = state.players[AI];
   const field = document.getElementById("field");
   let html = "";
-  const posLabels = ["내 본진", "내 1칸", "중앙", "적 1칸", "적 본진"];
+
+  // 내 본진(좌, 3행 스팬) — 항상 보임. 들어온 적 병력은 전 라인 합산.
+  let atkOnMe = 0;
+  for (let l = 0; l < C.LINES; l++) { const a = state.lines[l][0].armies[AI]; if (a && a.count) atkOnMe += a.count; }
+  html += `<div class="basecell mine" data-cell="basemine"><span class="blabel">내 본진</span>`
+        + `<div class="fort">🏰</div>${hpBar(me.baseHp, C.BASE_HP)}<div class="hplabel">HP ${Math.max(0,me.baseHp)}</div>`;
+  if (me.baseTower) html += `<div class="tower t0"><span class="tg">🏯</span>${hpBar(me.baseTower.hp, C.TOWER_HP)}</div>`;
+  if (atkOnMe) html += `<div class="stack u1"><span class="glyph">💥</span><span class="cnt">${atkOnMe}</span></div>`;
+  html += `</div>`;
+
+  // 적 본진(우) — 안개. 보일 때만 HP/본진포탑 공개.
+  const seen = enemyBaseVisible();
+  let myAtEn = 0;
+  for (let l = 0; l < C.LINES; l++) { const a = state.lines[l][4].armies[SIDE]; if (a && a.count) myAtEn += a.count; }
+  html += `<div class="basecell enemy" data-cell="baseenemy"><span class="blabel">적 본진</span><div class="fort">🏰</div>`;
+  if (seen) {
+    html += `${hpBar(en.baseHp, C.BASE_HP)}<div class="hplabel">HP ${Math.max(0,en.baseHp)}</div>`;
+    if (en.baseTower) html += `<div class="tower t1"><span class="tg">🏯</span>${hpBar(en.baseTower.hp, C.TOWER_HP)}</div>`;
+  } else {
+    html += `<div class="fogtxt">🌫️ 미확인</div>`;
+  }
+  if (myAtEn) html += `<div class="stack u0"><span class="glyph">💥</span><span class="cnt">${myAtEn}</span></div>`;
+  html += `</div>`;
+
+  // 가운데 3라인 × 3칸 (slot 1,2,3)
+  const posName = { 1: "내 1칸", 2: "중앙", 3: "적 1칸" };
   for (let l = 0; l < C.LINES; l++) {
-    html += `<div class="lane"><div class="lname">${LINE_NAMES[l]}</div>`;
-    for (let s = 0; s < C.SLOTS; s++) {
+    const row = l + 1;
+    html += `<div class="llabel" style="grid-row:${row}">${LINE_NAMES[l]}</div>`;
+    for (const s of [1, 2, 3]) {
       const slot = state.lines[l][s];
-      let cls = "cell";
-      if (s === 0) cls += " base mybase";
-      else if (s === 4) cls += " base aibase";
-      else if (s === 2) cls += " center";
-      let inner = `<span class="pos">${posLabels[s]}</span>`;
+      const visible = canSee(l, s);
+      const mineArmy = slot.armies[SIDE], enArmy = slot.armies[AI];
+      const mineTower = slot.tower && slot.tower.owner === SIDE ? slot.tower : null;
+      const enTower = slot.tower && slot.tower.owner === AI ? slot.tower : null;
 
-      // 본진 아이콘 + 본진포탑
-      if (s === 0) {
-        inner += `<div class="fort">🏰</div>` + hpBar(state.players[SIDE].baseHp, C.BASE_HP);
-        if (state.players[SIDE].baseTower) inner += `<div class="tower t0"><span class="tg">🏯</span></div>`;
-      }
-      if (s === 4) {
-        inner += `<div class="fort">🏰</div>` + hpBar(state.players[AI].baseHp, C.BASE_HP);
-        if (state.players[AI].baseTower) inner += `<div class="tower t1"><span class="tg">🏯</span></div>`;
-      }
-
-      // 라인 포탑
-      if (slot.tower) {
-        const tc = slot.tower.owner === SIDE ? "t0" : "t1";
-        inner += `<div class="tower ${tc}"><span class="tg">🛡️</span>${hpBar(slot.tower.hp, C.TOWER_HP)}</div>`;
-      }
-
-      // 유닛
-      const a0 = slot.armies[0], a1 = slot.armies[1];
-      if (a0 && a0.count) inner += `<div class="stack u0 ${a0.marching?'march':''}"><span class="glyph">${a0.marching?'👣':unitGlyph(a0.count)}</span><span class="cnt">${a0.count}</span></div>`;
-      if (a1 && a1.count) inner += `<div class="stack u1 ${a1.marching?'march':''}"><span class="glyph">${a1.marching?'👣':unitGlyph(a1.count)}</span><span class="cnt">${a1.count}</span></div>`;
-
-      // 내 생산 예약(이번 턴) 미리보기: 유닛은 내 1칸(s===1)
+      let cls = "cell" + (s === 2 ? " center" : "") + (visible ? "" : " fog");
+      let left = "", right = "";
+      // 왼쪽 = 나
+      if (mineTower) left += `<div class="tower t0"><span class="tg">🛡️</span>${hpBar(mineTower.hp, C.TOWER_HP)}</div>`;
+      if (mineArmy && mineArmy.count) left += stackHtml(SIDE, mineArmy);
+      // 내 생산 예약(내 1칸)
       if (s === 1) {
         const qn = q.units.filter(u => u.line === l).length;
-        if (qn) inner += `<div class="stack u0 ghost"><span class="glyph">🪖</span><span class="cnt">+${qn}</span><span class="tagq">⏳</span></div>`;
-        if (q.towers.some(t => t.line === l)) inner += `<div class="tower t0 ghost"><span class="tg">🛡️</span><span class="tagq">⏳</span></div>`;
+        if (qn) left += `<div class="stack u0 ghost"><span class="glyph">🪖</span><span class="cnt">+${qn}</span> <span class="tagq">⏳</span></div>`;
+        if (q.towers.some(t => t.line === l)) left += `<div class="tower t0 ghost"><span class="tg">🛡️</span><span class="tagq">⏳</span></div>`;
       }
-      html += `<div class="${cls}">${inner}</div>`;
+      // 오른쪽 = 적 (시야 있을 때만)
+      if (visible) {
+        if (enTower) right += `<div class="tower t1"><span class="tg">🛡️</span>${hpBar(enTower.hp, C.TOWER_HP)}</div>`;
+        if (enArmy && enArmy.count) right += stackHtml(AI, enArmy);
+      }
+      let inner = `<span class="pos">${posName[s]}</span><div class="zoneL">${left}</div>`;
+      if (!visible) inner += `<div class="fogmark">🌫️</div>`;
+      inner += `<div class="zoneR">${right}</div>`;
+      html += `<div class="${cls}" style="grid-row:${row}" data-cell="${l}-${s}">${inner}</div>`;
     }
-    html += `</div>`;
   }
   field.innerHTML = html;
 }
@@ -1134,15 +1365,16 @@ function renderQueue() {
 
 function renderControls() {
   const p = state.players[SIDE];
-  const can = (cost) => !gameOver && actsLeft() > 0 && p.gold >= cost;
+  const block = gameOver || animating;
+  const can = (cost) => !block && actsLeft() > 0 && p.gold >= cost;
   dis("bWorker", !can(C.COST_WORKER));
   dis("bUnit", !can(C.COST_UNIT));
   dis("bTower", !can(C.COST_TOWER));
   dis("bBaseTower", !can(C.COST_BASE_TOWER) || !!p.baseTower);
-  dis("bScout", gameOver || actsLeft() <= 0 || p.workers < 1);
-  dis("bAttack", gameOver || actsLeft() <= 0);
-  dis("bEnd", gameOver);
-  dis("bUndo", gameOver || pending.length === 0);
+  dis("bScout", block || actsLeft() <= 0 || p.workers < 1);
+  dis("bAttack", block || actsLeft() <= 0);
+  dis("bEnd", block);
+  dis("bUndo", block || pending.length === 0);
   const garr = E.garrisonCounts(state, SIDE);
   const al = +document.getElementById("attackLine").value || 0;
   const inp = document.getElementById("attackCount");

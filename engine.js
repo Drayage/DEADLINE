@@ -198,6 +198,49 @@
     return state;
   }
 
+  // 애니메이션용: 턴 해결을 단계별 클로저로 반환(UI가 사이사이 렌더/딜레이).
+  // 순서는 resolveTurn과 동일하게 유지.
+  function resolveTurnSteps(state) {
+    return [
+      { name: "이동", apply: () => resolveMovement(state) },
+      { name: "전투", apply: () => { resolveCombat(state); resolveBase(state); } },
+      { name: "수입", apply: () => collectIncome(state) },
+      { name: "생산", apply: () => { completeProduction(state); regenTowers(state); } },
+      { name: "정찰", apply: () => resolveScouts(state) },
+      { name: "종료", apply: () => { checkVictory(state); state.turn += 1; } },
+    ];
+  }
+
+  // 현재 상태에서 이번 전투 단계에 벌어질 교전 칸 목록(전투 적용 전 호출).
+  function detectEngagements(state) {
+    const out = [];
+    for (let l = 0; l < C.LINES; l++) {
+      for (let s = 0; s < C.SLOTS; s++) {
+        const slot = state.lines[l][s];
+        const a0 = slot.armies[0], a1 = slot.armies[1];
+        if (s === 0 || s === 4) {
+          // 본진 칸: 공격측 유닛 vs 방어측 본진포탑/일꾼/본진
+          const defender = s === 0 ? 0 : 1;
+          const atk = slot.armies[enemyOf(defender)];
+          if (atk && atk.count > 0) {
+            out.push({ line: l, slot: s, base: true, defender,
+              attacker: enemyOf(defender), atkCount: atk.count });
+          }
+          continue;
+        }
+        const uVsU = a0 && a0.count > 0 && a1 && a1.count > 0;
+        const tower = slot.tower;
+        const uVsT = tower && slot.armies[enemyOf(tower.owner)] && slot.armies[enemyOf(tower.owner)].count > 0;
+        if (uVsU || uVsT) {
+          out.push({ line: l, slot: s, base: false,
+            c0: a0 ? a0.count : 0, c1: a1 ? a1.count : 0,
+            tower: tower ? { owner: tower.owner, hp: tower.hp } : null });
+        }
+      }
+    }
+    return out;
+  }
+
   // 2. 이동: marching 병력을 진군 방향으로 1칸 이동.
   function resolveMovement(state) {
     for (let l = 0; l < C.LINES; l++) {
@@ -742,6 +785,8 @@
     createState,
     applyAction,
     resolveTurn,
+    resolveTurnSteps,
+    detectEngagements,
     resolveMovement,
     resolveCombat,
     resolveBase,
