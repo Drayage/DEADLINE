@@ -623,6 +623,7 @@
     rush: {
       name: "극한러쉬",
       targetWorkers: 5,
+      greedUntil: 0,
       wantBaseTower: false,
       atkSize: [2, 2],
       reserve: 0,
@@ -632,6 +633,7 @@
     turtle: {
       name: "1포탑배째기",
       targetWorkers: 12,
+      greedUntil: 0,
       wantBaseTower: true,
       atkSize: [5, 6],
       reserve: 3,
@@ -643,6 +645,7 @@
     economy: {
       name: "무한경제",
       targetWorkers: 18,
+      greedUntil: 13,        // 일꾼 13까지 탐욕(방어/공격 보류) → 러쉬·타이밍이 처벌
       wantBaseTower: true,
       atkSize: [6, 8],
       reserve: 2,
@@ -655,6 +658,7 @@
     timing: {
       name: "타이밍러쉬",
       targetWorkers: 7,
+      greedUntil: 0,
       wantBaseTower: false,
       atkSize: [3, 4],
       reserve: 0,
@@ -664,15 +668,15 @@
     },
     scout: {
       name: "정찰형",
-      targetWorkers: 10,
-      wantBaseTower: true,
-      atkSize: [4, 5],
-      reserve: 1,
+      targetWorkers: 8,
+      greedUntil: 0,
+      wantBaseTower: false,
+      atkSize: [3, 4],       // 정보 기반 빠른 약점 타격
+      reserve: 0,
       defends: true,
-      wantLineTower: true,
-      scoutChance: 0.5,
+      scoutChance: 0.18,     // 정찰은 가끔만(템포 손실 최소화)
       opportunist: true,
-      researchChance: 0.15,
+      researchChance: 0.1,
     },
   };
 
@@ -740,6 +744,14 @@
     const totalThreat = threat.reduce((a, b) => a + b, 0);
     // 본진 코앞(인접 칸) 위협 = 긴급
     const urgent = urgentThreat(state, side);
+
+    // 탐욕 구간: 일꾼이 greedUntil 미만이고 긴급 위협(본진 인접)이 아니면 일꾼만 생산.
+    // → 초반 무방비(탐욕)를 만들어 러쉬·타이밍이 처벌할 창을 연다.
+    const futureWorkersG = p.workers + state.queues[side].workers;
+    if ((ps.greedUntil || 0) > 0 && futureWorkersG < ps.greedUntil && urgent === 0) {
+      if (p.gold >= C.COST_WORKER) return { type: "worker" };
+      return null; // 골드 모자라면 행동 보류(저축)
+    }
 
     // 0) 방어: 위협받는 라인에 방어 유닛 부족 시 보강(길목에서 자동 요격).
     //    긴급(본진 인접)일 땐 2회까지, 아니면 턴당 1회만 방어에 사용.

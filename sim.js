@@ -126,22 +126,37 @@ console.log("== 전투 밸런스 단위 테스트 ==");
   assert(s.players[1].workers === w0 - 1, "돌파: 같은 턴 본진 일꾼 타격");
 }
 
-// ---------- AI vs AI 매치업 ----------
-console.log("\n== AI vs AI 100판 승률 ==");
-const matchups = [
-  ["rush", "turtle"],
-  ["turtle", "economy"],
-  ["economy", "timing"],
-  ["timing", "scout"],
-  ["rush", "economy"],
-  ["rush", "timing"],
-];
-
-for (const [a, b] of matchups) {
-  const r = E.simulate(a, b, 100);
-  const pct = (x) => (x * 100).toFixed(0).padStart(3) + "%";
-  console.log(
-    `${r.labelA.padEnd(8)} vs ${r.labelB.padEnd(8)} | ` +
-    `${r.labelA} ${pct(r.aRate)}  ${r.labelB} ${pct(r.bRate)}  무 ${pct(r.drawRate)} | 평균 ${r.avgTurns.toFixed(1)}턴`
-  );
+// ---------- AI vs AI 전체 매트릭스 (양방향 평균) ----------
+console.log("\n== AI vs AI 매트릭스 (행이 열을 이기는 승률, 양방향 평균 N=각 60판) ==");
+const N = 60;
+const order = ["rush", "turtle", "economy", "timing", "scout"];
+const label = (k) => E.PLAYSTYLES[k].name;
+// win[a][b] = a가 b를 이긴 비율(양방향 평균)
+const win = {};
+for (const a of order) { win[a] = {}; }
+for (let i = 0; i < order.length; i++) {
+  for (let j = i + 1; j < order.length; j++) {
+    const a = order[i], b = order[j];
+    const r1 = E.simulate(a, b, N);   // a=0측
+    const r2 = E.simulate(b, a, N);   // a=1측
+    const aWin = (r1.aRate + r2.bRate) / 2;
+    const bWin = (r1.bRate + r2.aRate) / 2;
+    win[a][b] = aWin; win[b][a] = bWin;
+  }
 }
+const pad = (s, n) => String(s).padEnd(n);
+const p3 = (x) => (x * 100).toFixed(0).padStart(3);
+let header = pad("", 9);
+for (const b of order) header += pad(label(b), 9);
+console.log(header + "  평균");
+for (const a of order) {
+  let row = pad(label(a), 9);
+  let sum = 0, cnt = 0;
+  for (const b of order) {
+    if (a === b) { row += pad("  -", 9); continue; }
+    row += pad("   " + p3(win[a][b]) + "%", 9);
+    sum += win[a][b]; cnt++;
+  }
+  console.log(row + "  " + p3(sum / cnt) + "%");
+}
+console.log("\n목표: 방어>러쉬, 경제>방어, 러쉬·타이밍>경제, 방어>타이밍 / 평균 40~60%대");
