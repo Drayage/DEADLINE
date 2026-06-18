@@ -6,15 +6,22 @@
 
 ## 실행
 
-- **게임 플레이**: 브라우저로 `index.html` 열기 (별도 설치 없음, vs AI 1인 플레이).
+- **게임 플레이**: 브라우저로 `index.html` 열기 (별도 설치 없음, **엔진이 인라인된 자체완결
+  단일 파일** — 다른 파일 없이도 동작).
 - **밸런스 테스트(콘솔)**: `node sim.js` — 전투 단위 테스트 + AI vs AI 매치업 승률.
-- 게임 화면 우측 하단 "밸런스 테스트" 패널에서도 매치업/전체표 실행 가능.
+- 게임 화면 우측 "밸런스 테스트" 패널에서도 매치업/전체표 실행 가능.
 
 ## 파일
 
 - `engine.js` — 순수 게임 로직 + AI(5성향) + 시뮬레이터. 브라우저·Node 공용(DOM 무의존).
-- `index.html` — UI(보드/행동/정찰/로그/밸런스 패널). `engine.js`를 포함해 단독 실행.
+  **게임 로직의 단일 소스.**
+- `index.template.html` — UI(HTML/CSS + 프런트 스크립트). `/*__ENGINE_INLINE__*/` 자리에
+  엔진이 주입된다.
+- `index.html` — **생성물**. `node build.js`가 템플릿 + 엔진을 합쳐 만든 자체완결 단일 파일.
+- `build.js` — `engine.js`를 `index.template.html`에 인라인해 `index.html` 생성.
 - `sim.js` — Node용 밸런스 테스트 러너.
+
+> 엔진을 고치면 `node build.js`로 `index.html`을 다시 생성한다.
 
 ## 규칙 요약
 

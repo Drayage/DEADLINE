@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DEADLINE — 라인 전략 RTS</title>
+<style>
+  :root {
+    --bg:#0b0e14; --bg2:#0e1320; --panel:#141a26; --line:#222b3a; --ink:#e7eef7;
+    --muted:#8a97ab; --p0:#4aa3ff; --p0d:#1d4e80; --p1:#ff5b52; --p1d:#7d241f;
+    --gold:#ffcc55; --tower:#b07cff; --ok:#4ad06a; --bad:#ff6b6b;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:radial-gradient(1200px 600px at 50% -10%, #16203a 0%, var(--bg) 60%);
+    color:var(--ink); font-family:ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;
+    font-size:14px;
+  }
+  header{
+    padding:12px 20px; display:flex; align-items:center; gap:18px; flex-wrap:wrap;
+    border-bottom:1px solid var(--line); background:rgba(10,14,22,.6); backdrop-filter:blur(4px);
+  }
+  header h1{font-size:20px; margin:0; letter-spacing:5px; font-weight:800;
+    background:linear-gradient(90deg,var(--p0),var(--tower),var(--p1));
+    -webkit-background-clip:text; background-clip:text; color:transparent;}
+  .tag{color:var(--muted); font-size:12px}
+  .chip{padding:3px 10px; border:1px solid var(--line); border-radius:20px; font-size:12px}
+  .chip b{color:var(--ink)}
+
+  .wrap{display:flex; gap:18px; padding:18px; align-items:flex-start; flex-wrap:wrap}
+  .col{flex:1 1 600px; min-width:340px}
+  .side{flex:0 0 300px}
+  .card{background:linear-gradient(180deg,var(--panel),var(--bg2));
+    border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:14px;
+    box-shadow:0 6px 20px rgba(0,0,0,.25)}
+  .card h2{font-size:12px; margin:0 0 10px; color:var(--muted); letter-spacing:2px; text-transform:uppercase}
+
+  /* 자원 바 */
+  .resbar{display:flex; gap:10px; flex-wrap:wrap}
+  .res{display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:10px;
+    background:#0d1320; border:1px solid var(--line); min-width:96px}
+  .res .ico{font-size:18px}
+  .res .v{font-size:18px; font-weight:800}
+  .res small{color:var(--muted)}
+  .res.gold .v{color:var(--gold)}
+
+  /* 전장 */
+  .field{display:flex; flex-direction:column; gap:14px}
+  .lane{display:grid; grid-template-columns:64px repeat(5,1fr); gap:8px; align-items:stretch}
+  .lane .lname{display:flex; align-items:center; justify-content:center; color:var(--muted);
+    font-size:13px; writing-mode:vertical-rl; text-orientation:upright; letter-spacing:2px}
+  .cell{position:relative; min-height:84px; border-radius:10px; padding:6px;
+    background:#0c111c; border:1px solid var(--line);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px}
+  .cell.base{background:linear-gradient(180deg,#10182a,#0a0f1a); border-color:#2b3850}
+  .cell.mybase{box-shadow:inset 0 0 0 2px var(--p0d)}
+  .cell.aibase{box-shadow:inset 0 0 0 2px var(--p1d)}
+  .cell.center{background:#0a0f1a}
+  .cell .pos{position:absolute; top:4px; left:6px; font-size:9px; color:#46546b; letter-spacing:1px}
+
+  /* 유닛 토큰 */
+  .stack{display:flex; align-items:center; gap:5px; font-weight:800}
+  .stack .glyph{font-size:18px; line-height:1}
+  .stack .cnt{font-size:16px}
+  .u0{color:var(--p0); text-shadow:0 0 8px rgba(74,163,255,.5)}
+  .u1{color:var(--p1); text-shadow:0 0 8px rgba(255,91,82,.5)}
+  .march{animation:bob .8s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+  .ghost{opacity:.45; filter:grayscale(.3)}
+  .ghost .tagq{font-size:9px; color:var(--muted)}
+
+  /* 포탑 / 본진 */
+  .tower{display:flex; flex-direction:column; align-items:center; gap:2px}
+  .tower .tg{font-size:20px}
+  .t0 .tg{filter:drop-shadow(0 0 6px var(--p0))}
+  .t1 .tg{filter:drop-shadow(0 0 6px var(--p1))}
+  .fort{font-size:26px}
+  .hpbar{width:48px; height:6px; border-radius:4px; background:#1a2233; overflow:hidden; margin-top:2px}
+  .hpbar > i{display:block; height:100%; background:linear-gradient(90deg,var(--ok),#9be86b)}
+  .hpbar.dmg > i{background:linear-gradient(90deg,#ff7a59,#ffd24a)}
+  .hplabel{font-size:9px; color:var(--muted)}
+
+  .legend{display:flex; gap:14px; flex-wrap:wrap; color:var(--muted); font-size:11px; margin-top:6px}
+  .legend span b{color:var(--ink)}
+
+  /* 행동 패널 */
+  .actions{display:flex; flex-direction:column; gap:9px}
+  .arow{display:flex; gap:6px; align-items:center; flex-wrap:wrap}
+  button{background:#1b2435; color:var(--ink); border:1px solid #2c3950; border-radius:8px;
+    padding:8px 12px; cursor:pointer; font:inherit; display:inline-flex; align-items:center; gap:6px;
+    transition:.12s}
+  button:hover:not(:disabled){border-color:var(--p0); transform:translateY(-1px)}
+  button:disabled{opacity:.35; cursor:not-allowed}
+  button.primary{background:linear-gradient(180deg,#4aa3ff,#2f7fd6); color:#06101e; border:none; font-weight:800}
+  button.danger{background:linear-gradient(180deg,#ff5b52,#d63a32); color:#1a0606; border:none; font-weight:800}
+  button.ghostbtn{background:transparent}
+  select,input[type=number],input[type=range]{background:#0a0f1a; color:var(--ink);
+    border:1px solid #2c3950; border-radius:8px; padding:6px; font:inherit}
+  .cost{color:var(--muted); font-size:11px}
+  .btn-ico{font-size:15px}
+
+  .queue{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:5px}
+  .queue li{display:flex; justify-content:space-between; padding:5px 8px; background:#0c121e;
+    border:1px solid var(--line); border-radius:8px; font-size:12px}
+  .queue .empty{color:var(--muted); text-align:center}
+
+  #log{height:200px; overflow-y:auto; font-size:12px; line-height:1.7}
+  #log .t{color:#5b6b86}
+  #log .warn{color:var(--bad)}
+  #log .big{color:var(--gold)}
+
+  .intel-line{font-size:12px; margin-bottom:5px}
+  .intel-line b{color:var(--p0)}
+  .hint{color:var(--muted); font-size:12px}
+
+  /* 토스트 */
+  #toast{position:fixed; left:50%; bottom:28px; transform:translateX(-50%);
+    background:#1b2435; border:1px solid var(--p0); color:var(--ink); padding:10px 18px;
+    border-radius:10px; opacity:0; pointer-events:none; transition:.25s; z-index:50; font-weight:700}
+  #toast.show{opacity:1}
+  #toast.bad{border-color:var(--bad)}
+
+  /* 배너 */
+  .overlay{position:fixed; inset:0; background:rgba(5,8,14,.82); display:flex;
+    align-items:center; justify-content:center; z-index:40}
+  .banner{text-align:center; padding:34px 44px; border-radius:16px; border:1px solid var(--line);
+    background:linear-gradient(180deg,var(--panel),var(--bg2)); box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  .banner .res-big{font-size:30px; font-weight:900; margin-bottom:8px}
+  .banner.win .res-big{color:var(--ok)} .banner.lose .res-big{color:var(--bad)}
+  details summary{cursor:pointer; color:var(--muted)}
+  pre.sim{font-size:11px; white-space:pre-wrap; background:#0a0f1a; padding:8px; border-radius:8px}
+</style>
+</head>
+<body>
+<header>
+  <h1>DEADLINE</h1>
+  <span class="tag">라인 전략 RTS</span>
+  <span class="chip">턴 <b id="turnTag">1</b></span>
+  <span class="chip">행동 <b id="actsTag">2/2</b></span>
+  <span class="chip">상대 <b id="aiStyle">???</b></span>
+  <button class="ghostbtn" id="bNew" style="margin-left:auto">⟳ 새 게임</button>
+</header>
+
+<div class="wrap">
+  <div class="col">
+    <div class="card">
+      <h2>전장</h2>
+      <div class="field" id="field"></div>
+      <div class="legend">
+        <span><b style="color:var(--p0)">●</b> 나</span>
+        <span><b style="color:var(--p1)">●</b> AI</span>
+        <span>🛡 포탑</span>
+        <span>🏰 본진</span>
+        <span>👣 진군중</span>
+        <span>⏳ 이번 턴 생산예약(다음 턴 등장)</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>내 자원</h2>
+      <div class="resbar">
+        <div class="res gold"><span class="ico">🪙</span><div><div class="v" id="myGold">100</div><small>골드</small></div></div>
+        <div class="res"><span class="ico">⛏️</span><div><div class="v" id="myWorkers">5</div><small>일꾼 +<span id="myInc">50</span>/턴</small></div></div>
+        <div class="res"><span class="ico">🏰</span><div><div class="v" id="myBase">30</div><small>본진 HP</small></div></div>
+        <div class="res"><span class="ico">🛡️</span><div><div class="v" id="myBT">–</div><small>본진포탑</small></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="side">
+    <div class="card">
+      <h2>행동 — 턴당 2회</h2>
+      <div class="actions">
+        <div class="arow"><button id="bWorker"><span class="btn-ico">⛏️</span>일꾼</button><span class="cost">50G · +10/턴</span></div>
+        <div class="arow"><button id="bUnit"><span class="btn-ico">⚔️</span>유닛</button><select id="unitLine"></select><span class="cost">50G</span></div>
+        <div class="arow"><button id="bTower"><span class="btn-ico">🛡️</span>포탑</button><select id="towerLine"></select><span class="cost">100G·내1칸</span></div>
+        <div class="arow"><button id="bBaseTower"><span class="btn-ico">🏯</span>본진포탑</button><span class="cost">100G</span></div>
+        <div class="arow"><button id="bScout"><span class="btn-ico">🔭</span>정찰</button><select id="scoutLine"></select><span class="cost">일꾼1 위험</span></div>
+        <div class="arow"><button id="bAttack" class="danger"><span class="btn-ico">💥</span>공격</button>
+          <select id="attackLine"></select>
+          <input type="number" id="attackCount" min="1" value="1" style="width:54px" /><span class="cost">기</span>
+        </div>
+        <div class="arow" style="margin-top:4px">
+          <button id="bEnd" class="primary" style="flex:1; justify-content:center">턴 종료 ▶</button>
+          <button id="bUndo" class="ghostbtn">↶ 취소</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>이번 턴 예약</h2>
+      <ul class="queue" id="queue"><li class="empty">아직 없음</li></ul>
+    </div>
+
+    <div class="card">
+      <h2>🔭 정찰 정보</h2>
+      <div id="intel"><span class="hint">아직 정보 없음</span></div>
+    </div>
+
+    <div class="card">
+      <h2>로그</h2>
+      <div id="log"></div>
+    </div>
+
+    <div class="card">
+      <details>
+        <summary>⚖ 밸런스 테스트 (AI vs AI)</summary>
+        <div class="arow" style="margin:8px 0">
+          <select id="simA"></select> vs <select id="simB"></select>
+          <input type="number" id="simN" value="100" style="width:64px" min="1" />
+          <button id="bSim">실행</button>
+        </div>
+        <button id="bSimAll" class="ghostbtn" style="margin-bottom:8px">전체 매치업 표</button>
+        <pre class="sim" id="simOut">매치업과 판수를 고르고 실행.</pre>
+      </details>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="bannerSlot"></div>
+
+<script>
+/*__ENGINE_INLINE__*/
+</script>
+<script>
+const E = DEADLINE;
+const { C, LINE_NAMES } = E;
+const SIDE = 0, AI = 1;
+let state, aiStyle, pending, gameOver, turnSnapshot;
+
+// 본진 칸 인덱스: 내 본진=0, 적 본진=4
+function newGame() {
+  state = E.createState();
+  const styles = Object.keys(E.PLAYSTYLES);
+  aiStyle = styles[Math.floor(Math.random() * styles.length)];
+  pending = []; gameOver = false;
+  document.getElementById("bannerSlot").innerHTML = "";
+  turnSnapshot = JSON.stringify(state);
+  logRaw(`새 게임 — 상대 성향은 비공개. 행운을 빈다.`);
+  render();
+}
+
+function actsLeft() { return C.ACTIONS_PER_TURN - pending.length; }
+
+function doAction(action, label) {
+  if (gameOver) return;
+  if (actsLeft() <= 0) return toast("행동을 모두 사용했어 (턴당 2회)", true);
+  const res = E.applyAction(state, SIDE, action);
+  if (!res.ok) return toast(res.reason, true);
+  pending.push({ action, label });
+  toast(label + " 예약됨");
+  render();
+}
+
+function undo() {
+  if (gameOver || pending.length === 0) return;
+  state = JSON.parse(turnSnapshot);
+  pending = [];
+  toast("이번 턴 행동 취소");
+  render();
+}
+
+function endTurn() {
+  if (gameOver) return;
+  E.aiTakeTurn(state, AI, aiStyle, Math.random);
+  const before = state.log.length;
+  E.resolveTurn(state, Math.random);
+  for (let i = before; i < state.log.length; i++) logRaw(state.log[i]);
+  pending = [];
+  if (state.winner !== null) return endGame();
+  turnSnapshot = JSON.stringify(state);
+  render();
+}
+
+function endGame() {
+  gameOver = true; render();
+  const w = state.winner;
+  let title, cls;
+  if (w === SIDE) { title = "승 리"; cls = "win"; }
+  else if (w === "draw") { title = "무승부"; cls = ""; }
+  else { title = "패 배"; cls = "lose"; }
+  document.getElementById("bannerSlot").innerHTML =
+    `<div class="overlay"><div class="banner ${cls}">
+      <div class="res-big">${title}</div>
+      <div class="hint" style="margin-bottom:14px">상대 성향: ${E.PLAYSTYLES[aiStyle].name}</div>
+      <button class="primary" id="bAgain">다시 하기</button>
+    </div></div>`;
+  document.getElementById("bAgain").onclick = newGame;
+}
+
+// ---------------- 렌더 ----------------
+function render() {
+  const p = state.players[SIDE], ai = state.players[AI];
+  setText("turnTag", state.turn + 1);
+  setText("actsTag", `${actsLeft()}/${C.ACTIONS_PER_TURN}`);
+  setText("aiStyle", gameOver ? E.PLAYSTYLES[aiStyle].name : "???");
+  setText("myGold", p.gold);
+  setText("myWorkers", p.workers);
+  setText("myInc", p.workers * C.GOLD_PER_WORKER);
+  setText("myBase", Math.max(0, p.baseHp));
+  setText("myBT", p.baseTower ? p.baseTower.hp : "–");
+  renderField();
+  renderQueue();
+  renderIntel();
+  renderControls();
+}
+
+function hpBar(hp, max) {
+  const pct = Math.max(0, Math.min(100, (hp / max) * 100));
+  const dmg = hp < max ? "dmg" : "";
+  return `<div class="hpbar ${dmg}"><i style="width:${pct}%"></i></div>`;
+}
+
+function unitGlyph(n) { return n >= 3 ? "⚔️" : (n === 2 ? "🗡️" : "🪖"); }
+
+function renderField() {
+  const q = state.queues[SIDE];
+  const field = document.getElementById("field");
+  let html = "";
+  const posLabels = ["내 본진", "내 1칸", "중앙", "적 1칸", "적 본진"];
+  for (let l = 0; l < C.LINES; l++) {
+    html += `<div class="lane"><div class="lname">${LINE_NAMES[l]}</div>`;
+    for (let s = 0; s < C.SLOTS; s++) {
+      const slot = state.lines[l][s];
+      let cls = "cell";
+      if (s === 0) cls += " base mybase";
+      else if (s === 4) cls += " base aibase";
+      else if (s === 2) cls += " center";
+      let inner = `<span class="pos">${posLabels[s]}</span>`;
+
+      // 본진 아이콘 + 본진포탑
+      if (s === 0) {
+        inner += `<div class="fort">🏰</div>` + hpBar(state.players[SIDE].baseHp, C.BASE_HP);
+        if (state.players[SIDE].baseTower) inner += `<div class="tower t0"><span class="tg">🏯</span></div>`;
+      }
+      if (s === 4) {
+        inner += `<div class="fort">🏰</div>` + hpBar(state.players[AI].baseHp, C.BASE_HP);
+        if (state.players[AI].baseTower) inner += `<div class="tower t1"><span class="tg">🏯</span></div>`;
+      }
+
+      // 라인 포탑
+      if (slot.tower) {
+        const tc = slot.tower.owner === SIDE ? "t0" : "t1";
+        inner += `<div class="tower ${tc}"><span class="tg">🛡️</span>${hpBar(slot.tower.hp, C.TOWER_HP)}</div>`;
+      }
+
+      // 유닛
+      const a0 = slot.armies[0], a1 = slot.armies[1];
+      if (a0 && a0.count) inner += `<div class="stack u0 ${a0.marching?'march':''}"><span class="glyph">${a0.marching?'👣':unitGlyph(a0.count)}</span><span class="cnt">${a0.count}</span></div>`;
+      if (a1 && a1.count) inner += `<div class="stack u1 ${a1.marching?'march':''}"><span class="glyph">${a1.marching?'👣':unitGlyph(a1.count)}</span><span class="cnt">${a1.count}</span></div>`;
+
+      // 내 생산 예약(이번 턴) 미리보기: 유닛은 내 1칸(s===1)
+      if (s === 1) {
+        const qn = q.units.filter(u => u.line === l).length;
+        if (qn) inner += `<div class="stack u0 ghost"><span class="glyph">🪖</span><span class="cnt">+${qn}</span><span class="tagq">⏳</span></div>`;
+        if (q.towers.some(t => t.line === l)) inner += `<div class="tower t0 ghost"><span class="tg">🛡️</span><span class="tagq">⏳</span></div>`;
+      }
+      html += `<div class="${cls}">${inner}</div>`;
+    }
+    html += `</div>`;
+  }
+  field.innerHTML = html;
+}
+
+function renderQueue() {
+  const ul = document.getElementById("queue");
+  if (pending.length === 0) { ul.innerHTML = `<li class="empty">아직 없음</li>`; return; }
+  ul.innerHTML = pending.map((x, i) => `<li><span>${i+1}. ${x.label}</span><span class="cost">⏳</span></li>`).join("");
+}
+
+function renderControls() {
+  const p = state.players[SIDE];
+  const can = (cost) => !gameOver && actsLeft() > 0 && p.gold >= cost;
+  dis("bWorker", !can(C.COST_WORKER));
+  dis("bUnit", !can(C.COST_UNIT));
+  dis("bTower", !can(C.COST_TOWER));
+  dis("bBaseTower", !can(C.COST_BASE_TOWER) || !!p.baseTower);
+  dis("bScout", gameOver || actsLeft() <= 0 || p.workers < 1);
+  dis("bAttack", gameOver || actsLeft() <= 0);
+  dis("bEnd", gameOver);
+  dis("bUndo", gameOver || pending.length === 0);
+  const garr = E.garrisonCounts(state, SIDE);
+  const al = +document.getElementById("attackLine").value || 0;
+  const inp = document.getElementById("attackCount");
+  inp.max = Math.max(1, garr[al] || 1);
+  if (+inp.value > +inp.max) inp.value = inp.max;
+}
+
+function renderIntel() {
+  const div = document.getElementById("intel");
+  const intel = state.intel[SIDE];
+  const L = ["내 본진","내 1칸","중앙","적 1칸","적 본진"];
+  let html = "";
+  for (let l = 0; l < C.LINES; l++) {
+    const info = intel[l];
+    if (!info) continue;
+    let parts = [];
+    for (const k in info.visible) {
+      const v = info.visible[k];
+      parts.push(`${L[+k]}: 적 ${v.count}기${v.tower?'+🛡️':''}`);
+    }
+    if (info.reachedBase) parts.push(`본진 도달 — 본진포탑 ${info.baseTowerSeen?'있음':'없음'}`);
+    if (info.death) parts.push(`${L[info.death.slot]}에서 정찰병 사망(수 미파악)`);
+    if (!parts.length) parts.push("정보 없음");
+    html += `<div class="intel-line"><b>${LINE_NAMES[l]}</b> ${parts.join(" · ")}</div>`;
+  }
+  div.innerHTML = html || `<span class="hint">아직 정보 없음</span>`;
+}
+
+// ---------------- 유틸 ----------------
+function setText(id, v){ document.getElementById(id).textContent = v; }
+function dis(id, v){ document.getElementById(id).disabled = !!v; }
+function logRaw(msg){
+  const el = document.getElementById("log");
+  const div = document.createElement("div");
+  let cls = ""; if (/⚠/.test(msg)) cls="warn"; if (/파괴|승리|사망/.test(msg)) cls="big";
+  div.className = cls;
+  div.innerHTML = `<span class="t">T${state.turn + 1}</span> ${msg}`;
+  el.prepend(div);
+}
+let toastTimer;
+function toast(msg, bad){
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.className = "show" + (bad ? " bad" : "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=> t.className = "", 1400);
+}
+function fillLineSelect(id){
+  document.getElementById(id).innerHTML = LINE_NAMES.map((n,i)=>`<option value="${i}">${n}</option>`).join("");
+}
+function fillStyleSelect(id, def){
+  const sel = document.getElementById(id);
+  sel.innerHTML = Object.entries(E.PLAYSTYLES).map(([k,v])=>`<option value="${k}">${v.name}</option>`).join("");
+  if (def) sel.value = def;
+}
+
+function bind(){
+  ["unitLine","towerLine","scoutLine","attackLine"].forEach(fillLineSelect);
+  fillStyleSelect("simA","rush"); fillStyleSelect("simB","turtle");
+  const L = i => LINE_NAMES[i];
+  on("bWorker", () => doAction({type:"worker"}, "일꾼 생산"));
+  on("bUnit", () => { const l=+v("unitLine"); doAction({type:"unit",line:l}, `유닛 생산(${L(l)})`); });
+  on("bTower", () => { const l=+v("towerLine"); doAction({type:"tower",line:l}, `포탑 건설(${L(l)})`); });
+  on("bBaseTower", () => doAction({type:"baseTower"}, "본진포탑 건설"));
+  on("bScout", () => { const l=+v("scoutLine"); doAction({type:"scout",line:l}, `정찰(${L(l)})`); });
+  on("bAttack", () => { const l=+v("attackLine"); const c=+v("attackCount")||1;
+    doAction({type:"attack",line:l,count:c}, `공격 ${c}기(${L(l)})`); });
+  document.getElementById("attackLine").onchange = renderControls;
+  on("bEnd", endTurn); on("bUndo", undo); on("bNew", newGame);
+  on("bSim", () => {
+    const r = E.simulate(v("simA"), v("simB"), +v("simN")||100);
+    document.getElementById("simOut").textContent =
+      `${r.labelA} ${(r.aRate*100).toFixed(0)}% | ${r.labelB} ${(r.bRate*100).toFixed(0)}% | 무 ${(r.drawRate*100).toFixed(0)}%\n평균 ${r.avgTurns.toFixed(1)}턴 (${r.n}판)`;
+  });
+  on("bSimAll", () => {
+    const order = Object.keys(E.PLAYSTYLES); let out = "";
+    for (const a of order) for (const b of order){ if(a===b) continue;
+      const r = E.simulate(a,b,50);
+      out += `${r.labelA} vs ${r.labelB}: ${(r.aRate*100).toFixed(0)}/${(r.bRate*100).toFixed(0)}/무${(r.drawRate*100).toFixed(0)} (${r.avgTurns.toFixed(0)}t)\n`;
+    }
+    document.getElementById("simOut").textContent = out;
+  });
+}
+function on(id, fn){ document.getElementById(id).onclick = fn; }
+function v(id){ return document.getElementById(id).value; }
+
+bind();
+newGame();
+</script>
+</body>
+</html>

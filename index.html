@@ -6,140 +6,195 @@
 <title>DEADLINE — 라인 전략 RTS</title>
 <style>
   :root {
-    --bg: #0e1116; --panel: #161b22; --line: #21262d; --ink: #e6edf3;
-    --muted: #8b949e; --p0: #58a6ff; --p1: #f85149; --gold: #e3b341;
-    --tower: #a371f7; --ok: #3fb950;
+    --bg:#0b0e14; --bg2:#0e1320; --panel:#141a26; --line:#222b3a; --ink:#e7eef7;
+    --muted:#8a97ab; --p0:#4aa3ff; --p0d:#1d4e80; --p1:#ff5b52; --p1d:#7d241f;
+    --gold:#ffcc55; --tower:#b07cff; --ok:#4ad06a; --bad:#ff6b6b;
   }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font-family: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
-    font-size: 14px;
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:radial-gradient(1200px 600px at 50% -10%, #16203a 0%, var(--bg) 60%);
+    color:var(--ink); font-family:ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;
+    font-size:14px;
   }
-  header {
-    padding: 10px 16px; border-bottom: 1px solid var(--line);
-    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  header{
+    padding:12px 20px; display:flex; align-items:center; gap:18px; flex-wrap:wrap;
+    border-bottom:1px solid var(--line); background:rgba(10,14,22,.6); backdrop-filter:blur(4px);
   }
-  header h1 { font-size: 16px; margin: 0; letter-spacing: 2px; }
-  .tag { color: var(--muted); font-size: 12px; }
-  .wrap { display: flex; gap: 16px; padding: 16px; flex-wrap: wrap; align-items: flex-start; }
-  .col { flex: 1 1 520px; min-width: 320px; }
-  .side { flex: 0 0 280px; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
-  .card h2 { font-size: 13px; margin: 0 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
-  .stats { display: flex; gap: 14px; flex-wrap: wrap; }
-  .stat b { font-size: 18px; }
-  .stat.gold b { color: var(--gold); }
-  .me { color: var(--p0); } .ai { color: var(--p1); }
+  header h1{font-size:20px; margin:0; letter-spacing:5px; font-weight:800;
+    background:linear-gradient(90deg,var(--p0),var(--tower),var(--p1));
+    -webkit-background-clip:text; background-clip:text; color:transparent;}
+  .tag{color:var(--muted); font-size:12px}
+  .chip{padding:3px 10px; border:1px solid var(--line); border-radius:20px; font-size:12px}
+  .chip b{color:var(--ink)}
 
-  table.board { width: 100%; border-collapse: collapse; }
-  table.board td { border: 1px solid var(--line); padding: 6px 4px; text-align: center; height: 56px; width: 20%; vertical-align: middle; }
-  .slot-base { background: #1b2230; }
-  .lineName { writing-mode: horizontal-tb; color: var(--muted); font-size: 12px; }
-  .pill { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 12px; margin: 1px; }
-  .pill.u0 { background: rgba(88,166,255,.18); color: var(--p0); border: 1px solid var(--p0); }
-  .pill.u1 { background: rgba(248,81,73,.18); color: var(--p1); border: 1px solid var(--p1); }
-  .pill.t0 { background: rgba(163,113,247,.18); color: var(--tower); border: 1px solid var(--tower); }
-  .pill.t1 { background: rgba(163,113,247,.12); color: var(--tower); border: 1px dashed var(--tower); }
-  .march { font-weight: bold; }
-  .colhead td { border: none; color: var(--muted); font-size: 11px; height: auto; padding: 2px; }
+  .wrap{display:flex; gap:18px; padding:18px; align-items:flex-start; flex-wrap:wrap}
+  .col{flex:1 1 600px; min-width:340px}
+  .side{flex:0 0 300px}
+  .card{background:linear-gradient(180deg,var(--panel),var(--bg2));
+    border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:14px;
+    box-shadow:0 6px 20px rgba(0,0,0,.25)}
+  .card h2{font-size:12px; margin:0 0 10px; color:var(--muted); letter-spacing:2px; text-transform:uppercase}
 
-  .actions { display: flex; flex-direction: column; gap: 8px; }
-  .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-  button {
-    background: #21262d; color: var(--ink); border: 1px solid #30363d;
-    border-radius: 6px; padding: 6px 10px; cursor: pointer; font: inherit;
-  }
-  button:hover:not(:disabled) { border-color: var(--p0); }
-  button:disabled { opacity: .4; cursor: not-allowed; }
-  button.primary { background: var(--p0); color: #0d1117; border-color: var(--p0); font-weight: bold; }
-  button.danger { background: var(--p1); color: #0d1117; border-color: var(--p1); }
-  select, input[type=number] { background: #0d1117; color: var(--ink); border: 1px solid #30363d; border-radius: 6px; padding: 5px; font: inherit; }
-  .cost { color: var(--muted); font-size: 11px; }
-  .acts-left { color: var(--ok); }
-  #log { height: 220px; overflow-y: auto; font-size: 12px; line-height: 1.6; }
-  #log .t { color: var(--muted); }
-  .intel-line { font-size: 12px; margin-bottom: 4px; }
-  .banner { text-align: center; font-size: 22px; padding: 20px; }
-  .win { color: var(--ok); } .lose { color: var(--p1); }
-  details summary { cursor: pointer; color: var(--muted); }
-  pre.sim { font-size: 11px; white-space: pre-wrap; background:#0d1117; padding:8px; border-radius:6px; }
-  .hint { color: var(--muted); font-size: 12px; }
+  /* 자원 바 */
+  .resbar{display:flex; gap:10px; flex-wrap:wrap}
+  .res{display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:10px;
+    background:#0d1320; border:1px solid var(--line); min-width:96px}
+  .res .ico{font-size:18px}
+  .res .v{font-size:18px; font-weight:800}
+  .res small{color:var(--muted)}
+  .res.gold .v{color:var(--gold)}
+
+  /* 전장 */
+  .field{display:flex; flex-direction:column; gap:14px}
+  .lane{display:grid; grid-template-columns:64px repeat(5,1fr); gap:8px; align-items:stretch}
+  .lane .lname{display:flex; align-items:center; justify-content:center; color:var(--muted);
+    font-size:13px; writing-mode:vertical-rl; text-orientation:upright; letter-spacing:2px}
+  .cell{position:relative; min-height:84px; border-radius:10px; padding:6px;
+    background:#0c111c; border:1px solid var(--line);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px}
+  .cell.base{background:linear-gradient(180deg,#10182a,#0a0f1a); border-color:#2b3850}
+  .cell.mybase{box-shadow:inset 0 0 0 2px var(--p0d)}
+  .cell.aibase{box-shadow:inset 0 0 0 2px var(--p1d)}
+  .cell.center{background:#0a0f1a}
+  .cell .pos{position:absolute; top:4px; left:6px; font-size:9px; color:#46546b; letter-spacing:1px}
+
+  /* 유닛 토큰 */
+  .stack{display:flex; align-items:center; gap:5px; font-weight:800}
+  .stack .glyph{font-size:18px; line-height:1}
+  .stack .cnt{font-size:16px}
+  .u0{color:var(--p0); text-shadow:0 0 8px rgba(74,163,255,.5)}
+  .u1{color:var(--p1); text-shadow:0 0 8px rgba(255,91,82,.5)}
+  .march{animation:bob .8s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+  .ghost{opacity:.45; filter:grayscale(.3)}
+  .ghost .tagq{font-size:9px; color:var(--muted)}
+
+  /* 포탑 / 본진 */
+  .tower{display:flex; flex-direction:column; align-items:center; gap:2px}
+  .tower .tg{font-size:20px}
+  .t0 .tg{filter:drop-shadow(0 0 6px var(--p0))}
+  .t1 .tg{filter:drop-shadow(0 0 6px var(--p1))}
+  .fort{font-size:26px}
+  .hpbar{width:48px; height:6px; border-radius:4px; background:#1a2233; overflow:hidden; margin-top:2px}
+  .hpbar > i{display:block; height:100%; background:linear-gradient(90deg,var(--ok),#9be86b)}
+  .hpbar.dmg > i{background:linear-gradient(90deg,#ff7a59,#ffd24a)}
+  .hplabel{font-size:9px; color:var(--muted)}
+
+  .legend{display:flex; gap:14px; flex-wrap:wrap; color:var(--muted); font-size:11px; margin-top:6px}
+  .legend span b{color:var(--ink)}
+
+  /* 행동 패널 */
+  .actions{display:flex; flex-direction:column; gap:9px}
+  .arow{display:flex; gap:6px; align-items:center; flex-wrap:wrap}
+  button{background:#1b2435; color:var(--ink); border:1px solid #2c3950; border-radius:8px;
+    padding:8px 12px; cursor:pointer; font:inherit; display:inline-flex; align-items:center; gap:6px;
+    transition:.12s}
+  button:hover:not(:disabled){border-color:var(--p0); transform:translateY(-1px)}
+  button:disabled{opacity:.35; cursor:not-allowed}
+  button.primary{background:linear-gradient(180deg,#4aa3ff,#2f7fd6); color:#06101e; border:none; font-weight:800}
+  button.danger{background:linear-gradient(180deg,#ff5b52,#d63a32); color:#1a0606; border:none; font-weight:800}
+  button.ghostbtn{background:transparent}
+  select,input[type=number],input[type=range]{background:#0a0f1a; color:var(--ink);
+    border:1px solid #2c3950; border-radius:8px; padding:6px; font:inherit}
+  .cost{color:var(--muted); font-size:11px}
+  .btn-ico{font-size:15px}
+
+  .queue{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:5px}
+  .queue li{display:flex; justify-content:space-between; padding:5px 8px; background:#0c121e;
+    border:1px solid var(--line); border-radius:8px; font-size:12px}
+  .queue .empty{color:var(--muted); text-align:center}
+
+  #log{height:200px; overflow-y:auto; font-size:12px; line-height:1.7}
+  #log .t{color:#5b6b86}
+  #log .warn{color:var(--bad)}
+  #log .big{color:var(--gold)}
+
+  .intel-line{font-size:12px; margin-bottom:5px}
+  .intel-line b{color:var(--p0)}
+  .hint{color:var(--muted); font-size:12px}
+
+  /* 토스트 */
+  #toast{position:fixed; left:50%; bottom:28px; transform:translateX(-50%);
+    background:#1b2435; border:1px solid var(--p0); color:var(--ink); padding:10px 18px;
+    border-radius:10px; opacity:0; pointer-events:none; transition:.25s; z-index:50; font-weight:700}
+  #toast.show{opacity:1}
+  #toast.bad{border-color:var(--bad)}
+
+  /* 배너 */
+  .overlay{position:fixed; inset:0; background:rgba(5,8,14,.82); display:flex;
+    align-items:center; justify-content:center; z-index:40}
+  .banner{text-align:center; padding:34px 44px; border-radius:16px; border:1px solid var(--line);
+    background:linear-gradient(180deg,var(--panel),var(--bg2)); box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  .banner .res-big{font-size:30px; font-weight:900; margin-bottom:8px}
+  .banner.win .res-big{color:var(--ok)} .banner.lose .res-big{color:var(--bad)}
+  details summary{cursor:pointer; color:var(--muted)}
+  pre.sim{font-size:11px; white-space:pre-wrap; background:#0a0f1a; padding:8px; border-radius:8px}
 </style>
 </head>
 <body>
 <header>
   <h1>DEADLINE</h1>
-  <span class="tag">라인 전략 RTS · vs AI</span>
-  <span class="tag" id="turnTag">턴 1</span>
-  <span class="tag acts-left" id="actsTag">행동 2/2</span>
+  <span class="tag">라인 전략 RTS</span>
+  <span class="chip">턴 <b id="turnTag">1</b></span>
+  <span class="chip">행동 <b id="actsTag">2/2</b></span>
+  <span class="chip">상대 <b id="aiStyle">???</b></span>
+  <button class="ghostbtn" id="bNew" style="margin-left:auto">⟳ 새 게임</button>
 </header>
 
 <div class="wrap">
   <div class="col">
     <div class="card">
-      <h2>전장 (← 내 본진 / 적 본진 →)</h2>
-      <table class="board" id="board"></table>
-      <div class="hint">파란=나(아래쪽 진군 →), 빨강=AI(← 진군). ▸/◂ = 진군 중. T=포탑.</div>
-    </div>
-
-    <div class="card">
-      <h2>내 상태</h2>
-      <div class="stats">
-        <div class="stat gold">골드 <b id="myGold">100</b></div>
-        <div class="stat">일꾼 <b id="myWorkers">5</b> <span class="cost">(턴당 +<span id="myInc">50</span>)</span></div>
-        <div class="stat">본진 HP <b id="myBase">30</b></div>
-        <div class="stat">본진포탑 <b id="myBT">없음</b></div>
+      <h2>전장</h2>
+      <div class="field" id="field"></div>
+      <div class="legend">
+        <span><b style="color:var(--p0)">●</b> 나</span>
+        <span><b style="color:var(--p1)">●</b> AI</span>
+        <span>🛡 포탑</span>
+        <span>🏰 본진</span>
+        <span>👣 진군중</span>
+        <span>⏳ 이번 턴 생산예약(다음 턴 등장)</span>
       </div>
     </div>
 
     <div class="card">
-      <h2>AI 상태 (보이는 정보만)</h2>
-      <div class="stats">
-        <div class="stat">본진 HP <b id="aiBase">30</b></div>
-        <div class="stat">본진포탑 <b id="aiBT">?</b></div>
-        <div class="stat ai">성향 <b id="aiStyle">?</b></div>
+      <h2>내 자원</h2>
+      <div class="resbar">
+        <div class="res gold"><span class="ico">🪙</span><div><div class="v" id="myGold">100</div><small>골드</small></div></div>
+        <div class="res"><span class="ico">⛏️</span><div><div class="v" id="myWorkers">5</div><small>일꾼 +<span id="myInc">50</span>/턴</small></div></div>
+        <div class="res"><span class="ico">🏰</span><div><div class="v" id="myBase">30</div><small>본진 HP</small></div></div>
+        <div class="res"><span class="ico">🛡️</span><div><div class="v" id="myBT">–</div><small>본진포탑</small></div></div>
       </div>
     </div>
   </div>
 
   <div class="side">
     <div class="card">
-      <h2>행동 (턴당 2회)</h2>
+      <h2>행동 — 턴당 2회</h2>
       <div class="actions">
-        <div class="row">
-          <button id="bWorker">일꾼</button><span class="cost">50G · 턴당 +10</span>
-        </div>
-        <div class="row">
-          <button id="bUnit">유닛</button>
-          <select id="unitLine"></select><span class="cost">50G</span>
-        </div>
-        <div class="row">
-          <button id="bTower">포탑</button>
-          <select id="towerLine"></select><span class="cost">100G · 내 1칸</span>
-        </div>
-        <div class="row">
-          <button id="bBaseTower">본진포탑</button><span class="cost">100G</span>
-        </div>
-        <div class="row">
-          <button id="bScout">정찰</button>
-          <select id="scoutLine"></select><span class="cost">일꾼1 위험</span>
-        </div>
-        <div class="row">
-          <button id="bAttack" class="danger">공격</button>
+        <div class="arow"><button id="bWorker"><span class="btn-ico">⛏️</span>일꾼</button><span class="cost">50G · +10/턴</span></div>
+        <div class="arow"><button id="bUnit"><span class="btn-ico">⚔️</span>유닛</button><select id="unitLine"></select><span class="cost">50G</span></div>
+        <div class="arow"><button id="bTower"><span class="btn-ico">🛡️</span>포탑</button><select id="towerLine"></select><span class="cost">100G·내1칸</span></div>
+        <div class="arow"><button id="bBaseTower"><span class="btn-ico">🏯</span>본진포탑</button><span class="cost">100G</span></div>
+        <div class="arow"><button id="bScout"><span class="btn-ico">🔭</span>정찰</button><select id="scoutLine"></select><span class="cost">일꾼1 위험</span></div>
+        <div class="arow"><button id="bAttack" class="danger"><span class="btn-ico">💥</span>공격</button>
           <select id="attackLine"></select>
-          <input type="number" id="attackCount" min="1" value="1" style="width:60px" />
-          <span class="cost">기</span>
+          <input type="number" id="attackCount" min="1" value="1" style="width:54px" /><span class="cost">기</span>
         </div>
-        <div class="row" style="margin-top:6px">
-          <button id="bEnd" class="primary">턴 종료 ▶</button>
-          <button id="bUndo">행동 취소</button>
+        <div class="arow" style="margin-top:4px">
+          <button id="bEnd" class="primary" style="flex:1; justify-content:center">턴 종료 ▶</button>
+          <button id="bUndo" class="ghostbtn">↶ 취소</button>
         </div>
       </div>
     </div>
 
     <div class="card">
-      <h2>정찰 정보</h2>
+      <h2>이번 턴 예약</h2>
+      <ul class="queue" id="queue"><li class="empty">아직 없음</li></ul>
+    </div>
+
+    <div class="card">
+      <h2>🔭 정찰 정보</h2>
       <div id="intel"><span class="hint">아직 정보 없음</span></div>
     </div>
 
@@ -150,165 +205,955 @@
 
     <div class="card">
       <details>
-        <summary>밸런스 테스트 (AI vs AI)</summary>
-        <div class="row" style="margin:8px 0">
+        <summary>⚖ 밸런스 테스트 (AI vs AI)</summary>
+        <div class="arow" style="margin:8px 0">
           <select id="simA"></select> vs <select id="simB"></select>
-          <input type="number" id="simN" value="100" style="width:70px" min="1" />
+          <input type="number" id="simN" value="100" style="width:64px" min="1" />
           <button id="bSim">실행</button>
         </div>
+        <button id="bSimAll" class="ghostbtn" style="margin-bottom:8px">전체 매치업 표</button>
         <pre class="sim" id="simOut">매치업과 판수를 고르고 실행.</pre>
-        <button id="bSimAll">전체 매치업 표</button>
       </details>
     </div>
   </div>
 </div>
 
+<div id="toast"></div>
 <div id="bannerSlot"></div>
 
-<script src="engine.js"></script>
+<script>
+/*
+ * DEADLINE — 라인 전략 RTS 엔진 (순수 로직 + AI + 시뮬레이터)
+ *
+ * 브라우저 전역(window.DEADLINE) 및 Node(module.exports) 양쪽 지원(UMD).
+ * DOM 의존 없음 — index.html(UI)과 sim.js(테스트)가 공유한다.
+ *
+ * 맵 모델: 각 라인은 위치 0~4의 공유 복도
+ *   [P0 본진=0] - [P0 1칸=1] - [중앙=2] - [P1 1칸=3] - [P1 본진=4]
+ *   P0 유닛은 pos1 생성 → pos4 방향 진군. P1 유닛은 pos3 생성 → pos0 방향 진군.
+ */
+(function (root, factory) {
+  if (typeof module === "object" && module.exports) {
+    module.exports = factory();
+  } else {
+    root.DEADLINE = factory();
+  }
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  // ---------- 상수 ----------
+  const C = {
+    LINES: 3, // 상/중/하
+    SLOTS: 5, // pos 0..4
+    START_GOLD: 100,
+    START_WORKERS: 5,
+    BASE_HP: 30,
+    GOLD_PER_WORKER: 10,
+    ACTIONS_PER_TURN: 2,
+    COST_WORKER: 50,
+    COST_UNIT: 50,
+    COST_TOWER: 100,
+    COST_BASE_TOWER: 100,
+    UNIT_HP: 10,
+    UNIT_ATK: 10,
+    TOWER_HP: 20,
+    TOWER_ATK: 20,
+    TOWER_REGEN: 2,
+    SCOUT_HP: 15,
+    MAX_TURNS: 200, // 시뮬 무승부 상한
+  };
+
+  const LINE_NAMES = ["상단", "중단", "하단"];
+
+  // ---------- 유틸 ----------
+  // 시드 RNG(재현 가능한 시뮬용)
+  function makeRng(seed) {
+    let s = (seed >>> 0) || 1;
+    return function () {
+      // xorshift32
+      s ^= s << 13; s >>>= 0;
+      s ^= s >> 17;
+      s ^= s << 5; s >>>= 0;
+      return s / 4294967296;
+    };
+  }
+  function randInt(rng, n) { return Math.floor(rng() * n); }
+
+  // ---------- 상태 생성 ----------
+  // 각 칸(slot)은 { units:{owner:{hp:총HP, count}}, tower:{owner, hp} | null }
+  // 본진 칸(0,4)에는 baseTower(본진포탑)와 base(본진 HP/일꾼)가 따로.
+  function createPlayer() {
+    return {
+      gold: C.START_GOLD,
+      workers: C.START_WORKERS,
+      baseHp: C.BASE_HP,
+      baseTower: null, // { hp } | null
+      alive: true,
+    };
+  }
+
+  function createState(opts) {
+    opts = opts || {};
+    const state = {
+      turn: 0,
+      players: [createPlayer(), createPlayer()],
+      // lines[line] = array of SLOTS slots
+      // slot.armies[owner] = { hp, count }  (owner 0 또는 1)
+      // slot.tower = { owner, hp } | null  (라인 1칸 포탑; owner 0은 pos1, owner1은 pos3)
+      lines: [],
+      // 각 플레이어가 이번 턴 큐에 넣은 행동(생산/건설/정찰)은 턴 말 완성
+      queues: [createQueue(), createQueue()],
+      // 정찰 결과(가장 최근): intel[side][line] = {...}
+      intel: [makeIntel(), makeIntel()],
+      log: [],
+      winner: null, // 0 | 1 | "draw" | null
+    };
+    for (let l = 0; l < C.LINES; l++) {
+      const slots = [];
+      for (let s = 0; s < C.SLOTS; s++) {
+        slots.push({ armies: [null, null], tower: null });
+      }
+      state.lines.push(slots);
+    }
+    return state;
+  }
+
+  function createQueue() {
+    return { workers: 0, units: [], towers: [], baseTower: false, scouts: [] };
+    // units: [{line}], towers: [{line}], scouts: [{line}]
+  }
+
+  function makeIntel() {
+    // intel[line] = null | { turn, slots:[{visible, count, tower}|...], death:{slot}|null, fullBase }
+    return [null, null, null];
+  }
+
+  // ---------- 방향 헬퍼 ----------
+  // owner 0 진군 방향 +1 (pos1→4), owner 1 진군 방향 -1 (pos3→0)
+  function dir(owner) { return owner === 0 ? 1 : -1; }
+  function spawnSlot(owner) { return owner === 0 ? 1 : 3; }
+  function enemyBaseSlot(owner) { return owner === 0 ? 4 : 0; }
+  function ownBaseSlot(owner) { return owner === 0 ? 0 : 4; }
+  function enemyOf(owner) { return owner === 0 ? 1 : 0; }
+
+  // ---------- 행동 적용 (큐에 등록) ----------
+  // action: {type:'worker'|'unit'|'tower'|'baseTower'|'scout'|'attack', line?, count?}
+  // 반환: {ok, reason}
+  function applyAction(state, side, action) {
+    const p = state.players[side];
+    const q = state.queues[side];
+    if (action.type === "worker") {
+      if (p.gold < C.COST_WORKER) return fail("골드 부족");
+      p.gold -= C.COST_WORKER;
+      q.workers += 1;
+      return ok();
+    }
+    if (action.type === "unit") {
+      if (p.gold < C.COST_UNIT) return fail("골드 부족");
+      p.gold -= C.COST_UNIT;
+      q.units.push({ line: action.line });
+      return ok();
+    }
+    if (action.type === "tower") {
+      if (p.gold < C.COST_TOWER) return fail("골드 부족");
+      const slot = state.lines[action.line][spawnSlot(side)];
+      if (slot.tower) return fail("이미 포탑 있음");
+      // 같은 턴 중복 건설 방지
+      if (q.towers.some((t) => t.line === action.line)) return fail("이미 건설 예약");
+      p.gold -= C.COST_TOWER;
+      q.towers.push({ line: action.line });
+      return ok();
+    }
+    if (action.type === "baseTower") {
+      if (p.gold < C.COST_BASE_TOWER) return fail("골드 부족");
+      if (p.baseTower) return fail("본진포탑 존재");
+      if (q.baseTower) return fail("이미 건설 예약");
+      p.gold -= C.COST_BASE_TOWER;
+      q.baseTower = true;
+      return ok();
+    }
+    if (action.type === "scout") {
+      if (p.workers - countQueuedScouts(q) <= 0) return fail("정찰 보낼 일꾼 없음");
+      q.scouts.push({ line: action.line });
+      return ok();
+    }
+    if (action.type === "attack") {
+      // 즉시 처리: 주둔 유닛 중 count만큼 진군 표시. 스폰 칸의 아군 주둔 병력에서 차감해 이동중 표시.
+      const slot = state.lines[action.line][spawnSlot(side)];
+      const garr = slot.armies[side];
+      if (!garr || garr.count <= 0) return fail("주둔 유닛 없음");
+      let n = action.count == null ? garr.count : Math.min(action.count, garr.count);
+      if (n <= 0) return fail("보낼 수량 0");
+      // 진군 표시: 이동 단계에서 이동할 수 있도록 marching 플래그.
+      // 같은 칸에서 일부만 진군 → 분리. marching 병력은 별도 슬롯 표현 대신
+      // armies에 marching 누적량을 둔다.
+      garr.marching = (garr.marching || 0) + n;
+      state.log.push(`P${side} ${LINE_NAMES[action.line]} ${n}기 공격 명령`);
+      return ok();
+    }
+    return fail("알 수 없는 행동");
+
+    function ok() { return { ok: true }; }
+    function fail(reason) { return { ok: false, reason }; }
+  }
+
+  function countQueuedScouts(q) { return q.scouts.length; }
+
+  // ---------- 턴 해결 ----------
+  // 행동은 이미 applyAction으로 적용됨(공격 명령 포함). 여기서 순서대로 처리.
+  function resolveTurn(state, rng) {
+    rng = rng || Math.random;
+    // 2. 이동
+    resolveMovement(state);
+    // 3. 전투 (칸별 + 본진)
+    resolveCombat(state);
+    resolveBase(state);
+    // 4. 수입
+    collectIncome(state);
+    // 5. 생산 완료
+    completeProduction(state);
+    // 5.5 포탑 회복
+    regenTowers(state);
+    // 6. 정찰
+    resolveScouts(state);
+    // 승패 판정
+    checkVictory(state);
+    state.turn += 1;
+    return state;
+  }
+
+  // 2. 이동: marching 병력을 진군 방향으로 1칸 이동.
+  function resolveMovement(state) {
+    for (let l = 0; l < C.LINES; l++) {
+      const slots = state.lines[l];
+      // 각 owner에 대해, 진군 방향으로 처리(겹침 방지 위해 방향 끝에서부터)
+      for (let owner = 0; owner < 2; owner++) {
+        const d = dir(owner);
+        // 진군 방향으로 먼 칸부터 이동(앞 칸이 비도록)
+        const order = d === 1
+          ? [3, 2, 1, 0] // owner0: 앞쪽(큰 인덱스)부터
+          : [1, 2, 3, 4]; // owner1: 앞쪽(작은 인덱스)부터
+        for (const s of order) {
+          const slot = slots[s];
+          const army = slot.armies[owner];
+          if (!army || !army.marching || army.marching <= 0) continue;
+          const enemy = enemyOf(owner);
+          // 현재 칸에 적 유닛/적 포탑이 있으면 이동하지 않고 정지(전투 단계에서 교전).
+          const enemyArmy = slot.armies[enemy];
+          const enemyTower = slot.tower && slot.tower.owner === enemy;
+          if ((enemyArmy && enemyArmy.count > 0) || enemyTower) continue;
+          const ns = s + d;
+          if (ns < 0 || ns >= C.SLOTS) continue;
+          const moveCount = army.marching;
+          const moveHp = moveCount * C.UNIT_HP; // 진군 병력은 풀피로 간주(주둔 시 회복)
+          // 출발 칸에서 차감
+          army.count -= moveCount;
+          army.marching = 0;
+          army.hp = army.count * C.UNIT_HP;
+          if (army.count <= 0) slot.armies[owner] = null;
+          // 도착 칸에 합류(계속 진군 상태로)
+          const dest = slots[ns];
+          if (!dest.armies[owner]) dest.armies[owner] = { hp: 0, count: 0, marching: 0 };
+          dest.armies[owner].count += moveCount;
+          dest.armies[owner].hp += moveHp;
+          dest.armies[owner].marching += moveCount; // 다음 턴 계속 진군
+        }
+      }
+    }
+  }
+
+  // 3. 전투: 칸마다 양 owner 군대가 있으면 전멸까지 / 포탑과 만나면 전멸까지.
+  function resolveCombat(state) {
+    for (let l = 0; l < C.LINES; l++) {
+      const slots = state.lines[l];
+      for (let s = 0; s < C.SLOTS; s++) {
+        const slot = slots[s];
+        // 본진 칸(0,4)은 resolveBase에서 처리
+        if (s === 0 || s === 4) continue;
+        const a0 = slot.armies[0];
+        const a1 = slot.armies[1];
+        // 유닛 vs 유닛
+        if (a0 && a0.count > 0 && a1 && a1.count > 0) {
+          fightToDeath(slot, l, s, state);
+        }
+        // 유닛 vs 포탑 (포탑 owner와 반대 owner 유닛)
+        if (slot.tower) {
+          const attacker = enemyOf(slot.tower.owner);
+          const army = slot.armies[attacker];
+          if (army && army.count > 0) {
+            fightArmyVsTower(slot, attacker, l, s, state);
+          }
+        }
+      }
+    }
+  }
+
+  // 두 군대 동시교전 → 한쪽 전멸까지
+  function fightToDeath(slot, line, s, state) {
+    let a = slot.armies[0], b = slot.armies[1];
+    let guard = 0;
+    while (a && a.count > 0 && b && b.count > 0 && guard++ < 100) {
+      const aAtk = a.count * C.UNIT_ATK;
+      const bAtk = b.count * C.UNIT_ATK;
+      a.hp -= bAtk;
+      b.hp -= aAtk;
+      a.count = a.hp > 0 ? Math.floor(a.hp / C.UNIT_HP) : 0;
+      b.count = b.hp > 0 ? Math.floor(b.hp / C.UNIT_HP) : 0;
+      if (a.count <= 0) { slot.armies[0] = null; a = null; }
+      if (b.count <= 0) { slot.armies[1] = null; b = null; }
+    }
+    // 생존측 hp 정규화(주둔/계속진군 시 정수 유지)
+    normalizeArmy(slot.armies[0]);
+    normalizeArmy(slot.armies[1]);
+    state.log.push(`${LINE_NAMES[line]} ${s}칸 교전`);
+  }
+
+  // 군대 vs 라인 포탑 → 전멸까지(둘 중 하나 0)
+  function fightArmyVsTower(slot, attacker, line, s, state) {
+    const tower = slot.tower;
+    let army = slot.armies[attacker];
+    let guard = 0;
+    while (army && army.count > 0 && tower.hp > 0 && guard++ < 100) {
+      const aAtk = army.count * C.UNIT_ATK;
+      const tAtk = C.TOWER_ATK;
+      army.hp -= tAtk;
+      tower.hp -= aAtk;
+      army.count = army.hp > 0 ? Math.floor(army.hp / C.UNIT_HP) : 0;
+      if (army.count <= 0) { slot.armies[attacker] = null; army = null; }
+    }
+    if (tower.hp <= 0) {
+      slot.tower = null;
+      state.log.push(`${LINE_NAMES[line]} 포탑 파괴`);
+    }
+    normalizeArmy(slot.armies[attacker]);
+  }
+
+  function normalizeArmy(army) {
+    if (!army) return;
+    if (army.count <= 0) return;
+    army.hp = army.count * C.UNIT_HP; // 칩 데미지는 교전 중에만, 교전 종료 후 생존 유닛은 풀피
+  }
+
+  // 본진 칸 처리: 적 유닛이 본진 칸 도달 시 본진포탑 → 일꾼 → 본진
+  function resolveBase(state) {
+    for (let l = 0; l < C.LINES; l++) {
+      const slots = state.lines[l];
+      for (const baseSlotIdx of [0, 4]) {
+        const defender = baseSlotIdx === 0 ? 0 : 1;
+        const attacker = enemyOf(defender);
+        const slot = slots[baseSlotIdx];
+        const army = slot.armies[attacker];
+        if (!army || army.count <= 0) continue;
+        const dp = state.players[defender];
+        // 본진포탑이 있으면 먼저 교전
+        if (dp.baseTower) {
+          let guard = 0;
+          let a = army;
+          while (a && a.count > 0 && dp.baseTower.hp > 0 && guard++ < 100) {
+            const aAtk = a.count * C.UNIT_ATK;
+            dp.baseTower.hp -= aAtk;
+            a.hp -= C.TOWER_ATK;
+            a.count = a.hp > 0 ? Math.floor(a.hp / C.UNIT_HP) : 0;
+            if (a.count <= 0) { slot.armies[attacker] = null; a = null; }
+          }
+          if (dp.baseTower.hp <= 0) {
+            dp.baseTower = null;
+            state.log.push(`P${defender} ${LINE_NAMES[l]} 본진포탑 파괴`);
+          }
+          normalizeArmy(slot.armies[attacker]);
+        }
+        // 본진포탑 없고 유닛 생존 → 일꾼 → 본진
+        const survivors = slot.armies[attacker];
+        if (!dp.baseTower && survivors && survivors.count > 0) {
+          const n = survivors.count;
+          if (dp.workers > 0) {
+            const killed = Math.min(dp.workers, n);
+            dp.workers -= killed;
+            state.log.push(`P${defender} 일꾼 ${killed} 사망`);
+          } else {
+            dp.baseHp -= n * C.UNIT_ATK;
+            state.log.push(`P${defender} 본진 -${n * C.UNIT_ATK} (HP ${Math.max(0, dp.baseHp)})`);
+          }
+        }
+      }
+    }
+  }
+
+  // 4. 수입
+  function collectIncome(state) {
+    for (let side = 0; side < 2; side++) {
+      const p = state.players[side];
+      p.gold += p.workers * C.GOLD_PER_WORKER;
+    }
+  }
+
+  // 5. 생산 완료
+  function completeProduction(state) {
+    for (let side = 0; side < 2; side++) {
+      const p = state.players[side];
+      const q = state.queues[side];
+      p.workers += q.workers;
+      for (const u of q.units) {
+        const slot = state.lines[u.line][spawnSlot(side)];
+        if (!slot.armies[side]) slot.armies[side] = { hp: 0, count: 0, marching: 0 };
+        slot.armies[side].count += 1;
+        slot.armies[side].hp += C.UNIT_HP;
+      }
+      for (const t of q.towers) {
+        const slot = state.lines[t.line][spawnSlot(side)];
+        if (!slot.tower) slot.tower = { owner: side, hp: C.TOWER_HP };
+      }
+      if (q.baseTower && !p.baseTower) {
+        p.baseTower = { hp: C.TOWER_HP };
+      }
+      // 정찰은 resolveScouts에서 처리(큐 유지) — 여기선 비우지 않음
+      state.queues[side] = carryScouts(q);
+    }
+  }
+
+  function carryScouts(q) {
+    const nq = createQueue();
+    nq.scouts = q.scouts; // 정찰은 이번 턴 말 처리되므로 resolveScouts 후 비움
+    return nq;
+  }
+
+  function regenTowers(state) {
+    for (let l = 0; l < C.LINES; l++) {
+      for (let s = 0; s < C.SLOTS; s++) {
+        const t = state.lines[l][s].tower;
+        if (t && t.hp < C.TOWER_HP) t.hp = Math.min(C.TOWER_HP, t.hp + C.TOWER_REGEN);
+      }
+    }
+    for (let side = 0; side < 2; side++) {
+      const bt = state.players[side].baseTower;
+      if (bt && bt.hp < C.TOWER_HP) bt.hp = Math.min(C.TOWER_HP, bt.hp + C.TOWER_REGEN);
+    }
+  }
+
+  // 6. 정찰: 정찰병이 라인을 적 본진 방향으로 통과하며 일방적으로 피해 받음.
+  function resolveScouts(state) {
+    for (let side = 0; side < 2; side++) {
+      const q = state.queues[side];
+      const p = state.players[side];
+      for (const sc of q.scouts) {
+        if (p.workers <= 0) continue; // 보낼 일꾼 없음
+        const result = runScout(state, side, sc.line);
+        state.intel[side][sc.line] = result.intel;
+        if (result.workerDied) {
+          p.workers -= 1;
+          state.log.push(`P${side} ${LINE_NAMES[sc.line]} 정찰병 사망`);
+        } else {
+          state.log.push(`P${side} ${LINE_NAMES[sc.line]} 정찰 귀환`);
+        }
+      }
+      state.queues[side].scouts = [];
+    }
+  }
+
+  function runScout(state, side, line) {
+    const enemy = enemyOf(side);
+    const slots = state.lines[line];
+    const d = dir(side);
+    let hp = C.SCOUT_HP;
+    const start = spawnSlot(side); // 자기 1칸에서 출발
+    const enemyBase = enemyBaseSlot(side);
+    const visible = {}; // slotIdx -> {count, tower}
+    let death = null;
+    let fullBase = false;
+
+    // 자기 진영~중앙~적진 순으로 통과 (출발 칸 다음부터 적 본진까지)
+    for (let s = start + d; ; s += d) {
+      if (s === enemyBase) {
+        // 적 본진 도달
+        const ep = state.players[enemy];
+        // 본진 정보 전부 획득
+        fullBase = true;
+        // 본진포탑 있으면 정찰병 사망(일꾼 손실), 없으면 무사 귀환
+        if (ep.baseTower) {
+          return {
+            intel: makeScoutIntel(line, visible, null, true, true),
+            workerDied: true,
+          };
+        } else {
+          return {
+            intel: makeScoutIntel(line, visible, null, true, false),
+            workerDied: false,
+          };
+        }
+      }
+      if (s < 0 || s >= C.SLOTS) break;
+      const slot = slots[s];
+      const army = slot.armies[enemy];
+      const towerHere = slot.tower && slot.tower.owner === enemy ? slot.tower : null;
+      let dmg = 0;
+      if (army && army.count > 0) dmg += army.count * C.UNIT_ATK;
+      if (towerHere) dmg += C.TOWER_ATK;
+      hp -= dmg;
+      if (hp <= 0) {
+        // 이 칸에서 사망 → 위치만, 수 미공개
+        death = { slot: s };
+        return {
+          intel: makeScoutIntel(line, visible, death, false, false),
+          workerDied: true,
+        };
+      }
+      // 살아남음 → 이 칸 내용 정확히 기록
+      visible[s] = {
+        count: army ? army.count : 0,
+        tower: !!towerHere,
+      };
+    }
+    // 루프가 비정상 종료(도달 못함) → 무사 귀환 처리
+    return { intel: makeScoutIntel(line, visible, null, false, false), workerDied: false };
+  }
+
+  function makeScoutIntel(line, visible, death, reachedBase, baseTowerSeen) {
+    return { line, turn: null, visible, death, reachedBase, baseTowerSeen };
+  }
+
+  function checkVictory(state) {
+    const p0 = state.players[0], p1 = state.players[1];
+    const d0 = p0.baseHp <= 0;
+    const d1 = p1.baseHp <= 0;
+    if (d0 && d1) state.winner = "draw";
+    else if (d0) state.winner = 1;
+    else if (d1) state.winner = 0;
+  }
+
+  // ========================================================================
+  // AI — 성향 기반 의사결정
+  // ========================================================================
+  // 성향 파라미터. defends=위협 대응 강도, opportunist=빈 라인 노리기.
+  const PLAYSTYLES = {
+    rush: {
+      name: "극한러쉬",
+      targetWorkers: 5,      // 일꾼 거의 안 늘림 → 자연히 유닛으로
+      wantBaseTower: false,
+      attackThreshold: 1,    // 1기만 모여도 바로 보냄(소량씩 = 무지성)
+      attackMax: 2,
+      reserve: 0,            // 방어 예비 없음
+      defends: false,        // 위협 와도 방어 안 함
+      scoutChance: 0,
+    },
+    turtle: {
+      name: "1포탑배째기",
+      targetWorkers: 12,
+      wantBaseTower: true,
+      attackThreshold: 12,   // 크게 모은 뒤 한 방 역습
+      attackMax: 99,         // 모은 거 전부
+      reserve: 3,
+      defends: true,
+      scoutChance: 0.1,
+    },
+    economy: {
+      name: "무한경제",
+      targetWorkers: 18,
+      wantBaseTower: true,
+      attackThreshold: 16,   // 경제 폭발 후 압도적 물량 한 방
+      attackMax: 99,
+      reserve: 2,
+      defends: true,
+      scoutChance: 0.1,
+    },
+    timing: {
+      name: "타이밍러쉬",
+      targetWorkers: 7,
+      wantBaseTower: false,
+      attackThreshold: 6,    // 방어 갖춰지기 전 타이밍에 전부 모아치기
+      attackMax: 99,
+      reserve: 0,
+      defends: true,
+      scoutChance: 0.15,
+    },
+    scout: {
+      name: "정찰형",
+      targetWorkers: 10,
+      wantBaseTower: true,
+      attackThreshold: 5,
+      attackMax: 99,
+      reserve: 1,
+      defends: true,
+      scoutChance: 0.5,
+      opportunist: true,     // 정찰 정보로 약한 라인 집중
+    },
+  };
+
+  // 현재 라인별 주둔(비진군) 아군 유닛 수
+  function garrisonCounts(state, side) {
+    const out = [];
+    for (let l = 0; l < C.LINES; l++) {
+      const slot = state.lines[l][spawnSlot(side)];
+      const army = slot.armies[side];
+      const total = army ? army.count : 0;
+      const marching = army ? (army.marching || 0) : 0;
+      out.push(Math.max(0, total - marching));
+    }
+    return out;
+  }
+
+  // 라인별 내 본진으로 접근 중인 적 유닛 수(내 절반 + 중앙). 위협 감지.
+  function incomingThreat(state, side) {
+    const enemy = enemyOf(side);
+    const out = [];
+    for (let l = 0; l < C.LINES; l++) {
+      const slots = state.lines[l];
+      let threat = 0;
+      // 내 방어 구간: 내 본진~중앙(내 spawn 포함). P0: slots 0,1,2 / P1: 2,3,4
+      const range = side === 0 ? [0, 1, 2] : [2, 3, 4];
+      for (const s of range) {
+        const a = slots[s].armies[enemy];
+        if (a && a.count > 0) threat += a.count;
+      }
+      out.push(threat);
+    }
+    return out;
+  }
+
+  // AI가 한 턴(행동 2회)을 계획해 실행. 방어는 턴당 1회로 제한(과방어 = 영구 교착 방지).
+  function aiTakeTurn(state, side, playstyle, rng) {
+    rng = rng || Math.random;
+    const ps = typeof playstyle === "string" ? PLAYSTYLES[playstyle] : playstyle;
+    let defenseUsed = 0;
+    for (let act = 0; act < C.ACTIONS_PER_TURN; act++) {
+      const choice = aiChooseAction(state, side, ps, rng, defenseUsed);
+      if (!choice) break;
+      if (choice._defense) defenseUsed++;
+      const res = applyAction(state, side, choice);
+      if (!res.ok) break;
+    }
+  }
+
+  function aiChooseAction(state, side, ps, rng, defenseUsed) {
+    const p = state.players[side];
+    const garr = garrisonCounts(state, side);
+    const threat = incomingThreat(state, side);
+    const totalThreat = threat.reduce((a, b) => a + b, 0);
+    // 본진 코앞(인접 칸) 위협 = 긴급
+    const urgent = urgentThreat(state, side);
+
+    // 0) 방어: 위협받는 라인에 방어 유닛 부족 시 보강(길목에서 자동 요격).
+    //    긴급(본진 인접)일 땐 2회까지, 아니면 턴당 1회만 방어에 사용.
+    if (ps.defends && p.gold >= C.COST_UNIT) {
+      const defenseCap = urgent > 0 ? C.ACTIONS_PER_TURN : 1;
+      if (defenseUsed < defenseCap) {
+        let target = -1, worst = 0;
+        for (let l = 0; l < C.LINES; l++) {
+          const deficit = threat[l] - garr[l];
+          if (threat[l] > 0 && deficit >= 0 && threat[l] > worst) { worst = threat[l]; target = l; }
+        }
+        if (target >= 0) return { type: "unit", line: target, _defense: true };
+      }
+    }
+
+    // 0.5) 긴급 위협 + 본진포탑 없음 → 비상 본진포탑
+    if (totalThreat >= 2 && !p.baseTower && !state.queues[side].baseTower && p.gold >= C.COST_BASE_TOWER) {
+      return { type: "baseTower" };
+    }
+
+    // 1) 공격: 임계 이상 모인 라인이 있으면(예비 reserve 남기고) 모은 병력 모아치기
+    {
+      let target = -1, best = -1;
+      for (let l = 0; l < C.LINES; l++) {
+        const sendable = garr[l] - ps.reserve;
+        if (garr[l] >= ps.attackThreshold && sendable >= 1 && garr[l] > best) {
+          best = garr[l]; target = l;
+        }
+      }
+      if (target >= 0) {
+        if (ps.opportunist) {
+          const weak = weakestEnemyLine(state, side);
+          if (weak >= 0 && garr[weak] - ps.reserve >= 1) target = weak;
+        }
+        const sendable = garr[target] - ps.reserve;
+        return { type: "attack", line: target, count: Math.min(ps.attackMax, sendable) };
+      }
+    }
+
+    // 2) 평시 본진포탑(원하면)
+    if (ps.wantBaseTower && !p.baseTower && !state.queues[side].baseTower && p.gold >= C.COST_BASE_TOWER) {
+      return { type: "baseTower" };
+    }
+
+    // 3) 경제: 일꾼 목표 미달이면 일꾼
+    const futureWorkers = p.workers + state.queues[side].workers;
+    if (futureWorkers < ps.targetWorkers && p.gold >= C.COST_WORKER) {
+      return { type: "worker" };
+    }
+
+    // 4) 정찰(확률)
+    if (rng() < ps.scoutChance && p.workers > 1) {
+      return { type: "scout", line: randInt(rng, C.LINES) };
+    }
+
+    // 5) 유닛 생산 — 한 라인에 몰아주기(모아치기 준비)
+    if (p.gold >= C.COST_UNIT) {
+      let target = 0, best = -1;
+      for (let l = 0; l < C.LINES; l++) if (garr[l] > best) { best = garr[l]; target = l; }
+      return { type: "unit", line: target };
+    }
+
+    return null;
+  }
+
+  // 본진 인접 칸(긴급)의 적 유닛 수 합. P0: slot1 / P1: slot3
+  function urgentThreat(state, side) {
+    const enemy = enemyOf(side);
+    const adj = side === 0 ? 1 : 3;
+    let n = 0;
+    for (let l = 0; l < C.LINES; l++) {
+      const a = state.lines[l][adj].armies[enemy];
+      if (a && a.count > 0) n += a.count;
+    }
+    return n;
+  }
+
+  // 정찰 정보 기준 가장 약한 적 라인(병력/포탑 적음). 정보 없으면 -1.
+  function weakestEnemyLine(state, side) {
+    const intel = state.intel[side];
+    let best = -1, bestScore = Infinity;
+    for (let l = 0; l < C.LINES; l++) {
+      const info = intel[l];
+      if (!info) continue;
+      let score = 0;
+      for (const k in info.visible) score += (info.visible[k].count || 0) + (info.visible[k].tower ? 2 : 0);
+      if (info.baseTowerSeen) score += 2;
+      if (score < bestScore) { bestScore = score; best = l; }
+    }
+    return best;
+  }
+
+  // ========================================================================
+  // 시뮬레이터 — AI vs AI
+  // ========================================================================
+  function playGame(playstyleA, playstyleB, seed) {
+    const rng = makeRng(seed || 1);
+    const state = createState();
+    while (state.winner === null && state.turn < C.MAX_TURNS) {
+      aiTakeTurn(state, 0, playstyleA, rng);
+      aiTakeTurn(state, 1, playstyleB, rng);
+      resolveTurn(state, rng);
+    }
+    return {
+      winner: state.winner === null ? "draw" : state.winner,
+      turns: state.turn,
+    };
+  }
+
+  function simulate(playstyleA, playstyleB, n) {
+    n = n || 100;
+    let a = 0, b = 0, draw = 0, totalTurns = 0;
+    for (let i = 0; i < n; i++) {
+      const r = playGame(playstyleA, playstyleB, i + 1);
+      if (r.winner === 0) a++;
+      else if (r.winner === 1) b++;
+      else draw++;
+      totalTurns += r.turns;
+    }
+    return {
+      a, b, draw, n,
+      aRate: a / n, bRate: b / n, drawRate: draw / n,
+      avgTurns: totalTurns / n,
+      labelA: PLAYSTYLES[playstyleA] ? PLAYSTYLES[playstyleA].name : playstyleA,
+      labelB: PLAYSTYLES[playstyleB] ? PLAYSTYLES[playstyleB].name : playstyleB,
+    };
+  }
+
+  return {
+    C,
+    LINE_NAMES,
+    PLAYSTYLES,
+    makeRng,
+    createState,
+    applyAction,
+    resolveTurn,
+    resolveMovement,
+    resolveCombat,
+    resolveBase,
+    collectIncome,
+    completeProduction,
+    resolveScouts,
+    runScout,
+    garrisonCounts,
+    incomingThreat,
+    weakestEnemyLine,
+    aiTakeTurn,
+    aiChooseAction,
+    playGame,
+    simulate,
+    // 방향 헬퍼(테스트용)
+    spawnSlot, enemyBaseSlot, dir,
+  };
+});
+
+</script>
 <script>
 const E = DEADLINE;
 const { C, LINE_NAMES } = E;
 const SIDE = 0, AI = 1;
+let state, aiStyle, pending, gameOver, turnSnapshot;
 
-let state, aiStyle, pending, gameOver;
-
+// 본진 칸 인덱스: 내 본진=0, 적 본진=4
 function newGame() {
   state = E.createState();
-  // AI 성향 랜덤
   const styles = Object.keys(E.PLAYSTYLES);
   aiStyle = styles[Math.floor(Math.random() * styles.length)];
-  pending = []; // 이번 턴 내가 큐에 넣은 행동(취소용 기록)
-  gameOver = false;
+  pending = []; gameOver = false;
   document.getElementById("bannerSlot").innerHTML = "";
-  log(`새 게임 시작 — AI 성향은 비공개. 행운을 빈다.`);
+  turnSnapshot = JSON.stringify(state);
+  logRaw(`새 게임 — 상대 성향은 비공개. 행운을 빈다.`);
   render();
 }
 
-// ---------- 행동 ----------
 function actsLeft() { return C.ACTIONS_PER_TURN - pending.length; }
 
-function doAction(action) {
+function doAction(action, label) {
   if (gameOver) return;
-  if (actsLeft() <= 0) { flash("행동 횟수 소진"); return; }
-  const snapshotGold = state.players[SIDE].gold;
+  if (actsLeft() <= 0) return toast("행동을 모두 사용했어 (턴당 2회)", true);
   const res = E.applyAction(state, SIDE, action);
-  if (!res.ok) { flash(res.reason); return; }
-  pending.push({ action, goldBefore: snapshotGold });
+  if (!res.ok) return toast(res.reason, true);
+  pending.push({ action, label });
+  toast(label + " 예약됨");
   render();
 }
 
 function undo() {
-  // 단순 취소: 마지막 행동을 되돌리기 위해 상태를 재구성하긴 복잡 →
-  // 이번 턴 시작 상태로 전체 롤백.
-  if (pending.length === 0 || gameOver) return;
-  // 가장 단순/안전: 턴 시작 스냅샷에서 다시.
-  rollbackTurn();
-}
-
-let turnSnapshot = null;
-function snapshotTurn() { turnSnapshot = JSON.stringify(state); }
-function rollbackTurn() {
-  if (!turnSnapshot) return;
+  if (gameOver || pending.length === 0) return;
   state = JSON.parse(turnSnapshot);
   pending = [];
+  toast("이번 턴 행동 취소");
   render();
 }
 
 function endTurn() {
   if (gameOver) return;
-  // AI 행동
   E.aiTakeTurn(state, AI, aiStyle, Math.random);
-  // 해결
-  const beforeLog = state.log.length;
+  const before = state.log.length;
   E.resolveTurn(state, Math.random);
-  // 새 로그 출력
-  for (let i = beforeLog; i < state.log.length; i++) log(state.log[i]);
+  for (let i = before; i < state.log.length; i++) logRaw(state.log[i]);
   pending = [];
-  if (state.winner !== null) endGame();
-  else { snapshotTurn(); render(); }
+  if (state.winner !== null) return endGame();
+  turnSnapshot = JSON.stringify(state);
+  render();
 }
 
 function endGame() {
-  gameOver = true;
-  render();
+  gameOver = true; render();
   const w = state.winner;
-  let msg, cls;
-  if (w === SIDE) { msg = "승리! 적 본진 파괴 🎉"; cls = "win"; }
-  else if (w === "draw") { msg = "무승부 (양측 본진 파괴)"; cls = ""; }
-  else { msg = `패배… 적(${E.PLAYSTYLES[aiStyle].name})에게 본진이 뚫림`; cls = "lose"; }
+  let title, cls;
+  if (w === SIDE) { title = "승 리"; cls = "win"; }
+  else if (w === "draw") { title = "무승부"; cls = ""; }
+  else { title = "패 배"; cls = "lose"; }
   document.getElementById("bannerSlot").innerHTML =
-    `<div class="card banner ${cls}">${msg}<br><button class="primary" onclick="newGame()">다시 하기</button>
-     <span class="hint"> · 상대 성향: ${E.PLAYSTYLES[aiStyle].name}</span></div>`;
+    `<div class="overlay"><div class="banner ${cls}">
+      <div class="res-big">${title}</div>
+      <div class="hint" style="margin-bottom:14px">상대 성향: ${E.PLAYSTYLES[aiStyle].name}</div>
+      <button class="primary" id="bAgain">다시 하기</button>
+    </div></div>`;
+  document.getElementById("bAgain").onclick = newGame;
 }
 
-// ---------- 렌더 ----------
+// ---------------- 렌더 ----------------
 function render() {
   const p = state.players[SIDE], ai = state.players[AI];
-  document.getElementById("turnTag").textContent = `턴 ${state.turn + 1}`;
-  document.getElementById("actsTag").textContent = `행동 ${actsLeft()}/${C.ACTIONS_PER_TURN}`;
-  document.getElementById("myGold").textContent = p.gold;
-  document.getElementById("myWorkers").textContent = p.workers;
-  document.getElementById("myInc").textContent = p.workers * C.GOLD_PER_WORKER;
-  document.getElementById("myBase").textContent = Math.max(0, p.baseHp);
-  document.getElementById("myBT").textContent = p.baseTower ? `HP ${p.baseTower.hp}` : "없음";
-  document.getElementById("aiBase").textContent = Math.max(0, ai.baseHp);
-  // AI 본진포탑은 정찰로만 확정 — 기본 ?, 정찰로 본 적 있으면 표시
-  document.getElementById("aiBT").textContent = aiBaseTowerKnown();
-  document.getElementById("aiStyle").textContent = gameOver ? E.PLAYSTYLES[aiStyle].name : "?";
-
-  renderBoard();
+  setText("turnTag", state.turn + 1);
+  setText("actsTag", `${actsLeft()}/${C.ACTIONS_PER_TURN}`);
+  setText("aiStyle", gameOver ? E.PLAYSTYLES[aiStyle].name : "???");
+  setText("myGold", p.gold);
+  setText("myWorkers", p.workers);
+  setText("myInc", p.workers * C.GOLD_PER_WORKER);
+  setText("myBase", Math.max(0, p.baseHp));
+  setText("myBT", p.baseTower ? p.baseTower.hp : "–");
+  renderField();
+  renderQueue();
   renderIntel();
   renderControls();
 }
 
-function renderBoard() {
-  const tbl = document.getElementById("board");
-  let html = "<tr class='colhead'><td>라인</td><td>내 본진</td><td>내 1칸</td><td>중앙</td><td>적 1칸</td><td>적 본진</td></tr>";
+function hpBar(hp, max) {
+  const pct = Math.max(0, Math.min(100, (hp / max) * 100));
+  const dmg = hp < max ? "dmg" : "";
+  return `<div class="hpbar ${dmg}"><i style="width:${pct}%"></i></div>`;
+}
+
+function unitGlyph(n) { return n >= 3 ? "⚔️" : (n === 2 ? "🗡️" : "🪖"); }
+
+function renderField() {
+  const q = state.queues[SIDE];
+  const field = document.getElementById("field");
+  let html = "";
+  const posLabels = ["내 본진", "내 1칸", "중앙", "적 1칸", "적 본진"];
   for (let l = 0; l < C.LINES; l++) {
-    html += "<tr>";
-    html += `<td class="lineName">${LINE_NAMES[l]}</td>`;
+    html += `<div class="lane"><div class="lname">${LINE_NAMES[l]}</div>`;
     for (let s = 0; s < C.SLOTS; s++) {
       const slot = state.lines[l][s];
-      const isBase = s === 0 || s === 4;
-      let cell = "";
-      // 본진 칸엔 본진포탑 표시
-      if (s === 0 && state.players[SIDE].baseTower) cell += `<span class="pill t0">本塔${state.players[SIDE].baseTower.hp}</span>`;
-      if (s === 4 && state.players[AI].baseTower) cell += `<span class="pill t1">本塔?</span>`;
-      const a0 = slot.armies[0], a1 = slot.armies[1];
-      if (a0 && a0.count) cell += `<span class="pill u0 ${a0.marching?'march':''}">${a0.count}${a0.marching?'▸':''}</span>`;
-      if (a1 && a1.count) cell += `<span class="pill u1 ${a1.marching?'march':''}">${a1.count}${a1.marching?'◂':''}</span>`;
-      if (slot.tower) {
-        const cls = slot.tower.owner === SIDE ? "t0" : "t1";
-        cell += `<span class="pill ${cls}">T${slot.tower.hp}</span>`;
+      let cls = "cell";
+      if (s === 0) cls += " base mybase";
+      else if (s === 4) cls += " base aibase";
+      else if (s === 2) cls += " center";
+      let inner = `<span class="pos">${posLabels[s]}</span>`;
+
+      // 본진 아이콘 + 본진포탑
+      if (s === 0) {
+        inner += `<div class="fort">🏰</div>` + hpBar(state.players[SIDE].baseHp, C.BASE_HP);
+        if (state.players[SIDE].baseTower) inner += `<div class="tower t0"><span class="tg">🏯</span></div>`;
       }
-      html += `<td class="${isBase?'slot-base':''}">${cell||'·'}</td>`;
+      if (s === 4) {
+        inner += `<div class="fort">🏰</div>` + hpBar(state.players[AI].baseHp, C.BASE_HP);
+        if (state.players[AI].baseTower) inner += `<div class="tower t1"><span class="tg">🏯</span></div>`;
+      }
+
+      // 라인 포탑
+      if (slot.tower) {
+        const tc = slot.tower.owner === SIDE ? "t0" : "t1";
+        inner += `<div class="tower ${tc}"><span class="tg">🛡️</span>${hpBar(slot.tower.hp, C.TOWER_HP)}</div>`;
+      }
+
+      // 유닛
+      const a0 = slot.armies[0], a1 = slot.armies[1];
+      if (a0 && a0.count) inner += `<div class="stack u0 ${a0.marching?'march':''}"><span class="glyph">${a0.marching?'👣':unitGlyph(a0.count)}</span><span class="cnt">${a0.count}</span></div>`;
+      if (a1 && a1.count) inner += `<div class="stack u1 ${a1.marching?'march':''}"><span class="glyph">${a1.marching?'👣':unitGlyph(a1.count)}</span><span class="cnt">${a1.count}</span></div>`;
+
+      // 내 생산 예약(이번 턴) 미리보기: 유닛은 내 1칸(s===1)
+      if (s === 1) {
+        const qn = q.units.filter(u => u.line === l).length;
+        if (qn) inner += `<div class="stack u0 ghost"><span class="glyph">🪖</span><span class="cnt">+${qn}</span><span class="tagq">⏳</span></div>`;
+        if (q.towers.some(t => t.line === l)) inner += `<div class="tower t0 ghost"><span class="tg">🛡️</span><span class="tagq">⏳</span></div>`;
+      }
+      html += `<div class="${cls}">${inner}</div>`;
     }
-    html += "</tr>";
+    html += `</div>`;
   }
-  tbl.innerHTML = html;
+  field.innerHTML = html;
+}
+
+function renderQueue() {
+  const ul = document.getElementById("queue");
+  if (pending.length === 0) { ul.innerHTML = `<li class="empty">아직 없음</li>`; return; }
+  ul.innerHTML = pending.map((x, i) => `<li><span>${i+1}. ${x.label}</span><span class="cost">⏳</span></li>`).join("");
 }
 
 function renderControls() {
   const p = state.players[SIDE];
   const can = (cost) => !gameOver && actsLeft() > 0 && p.gold >= cost;
-  document.getElementById("bWorker").disabled = !can(C.COST_WORKER);
-  document.getElementById("bUnit").disabled = !can(C.COST_UNIT);
-  document.getElementById("bTower").disabled = !can(C.COST_TOWER);
-  document.getElementById("bBaseTower").disabled = !can(C.COST_BASE_TOWER) || !!p.baseTower;
-  document.getElementById("bScout").disabled = gameOver || actsLeft() <= 0 || p.workers < 1;
-  document.getElementById("bAttack").disabled = gameOver || actsLeft() <= 0;
-  document.getElementById("bEnd").disabled = gameOver;
-  // 공격 가능 최대 수량 갱신
+  dis("bWorker", !can(C.COST_WORKER));
+  dis("bUnit", !can(C.COST_UNIT));
+  dis("bTower", !can(C.COST_TOWER));
+  dis("bBaseTower", !can(C.COST_BASE_TOWER) || !!p.baseTower);
+  dis("bScout", gameOver || actsLeft() <= 0 || p.workers < 1);
+  dis("bAttack", gameOver || actsLeft() <= 0);
+  dis("bEnd", gameOver);
+  dis("bUndo", gameOver || pending.length === 0);
   const garr = E.garrisonCounts(state, SIDE);
-  const al = +document.getElementById("attackLine").value;
+  const al = +document.getElementById("attackLine").value || 0;
   const inp = document.getElementById("attackCount");
   inp.max = Math.max(1, garr[al] || 1);
+  if (+inp.value > +inp.max) inp.value = inp.max;
 }
 
 function renderIntel() {
   const div = document.getElementById("intel");
   const intel = state.intel[SIDE];
+  const L = ["내 본진","내 1칸","중앙","적 1칸","적 본진"];
   let html = "";
   for (let l = 0; l < C.LINES; l++) {
     const info = intel[l];
@@ -316,89 +1161,75 @@ function renderIntel() {
     let parts = [];
     for (const k in info.visible) {
       const v = info.visible[k];
-      const label = slotLabel(+k);
-      parts.push(`${label}: 적 ${v.count}기${v.tower?'+포탑':''}`);
+      parts.push(`${L[+k]}: 적 ${v.count}기${v.tower?'+🛡️':''}`);
     }
-    if (info.reachedBase) parts.push(`본진 도달 — ${info.baseTowerSeen?'본진포탑 있음':'본진포탑 없음'}`);
-    if (info.death) parts.push(`${slotLabel(info.death.slot)}에서 정찰병 사망(수 미파악)`);
-    if (parts.length === 0) parts.push("정보 없음");
-    html += `<div class="intel-line"><b>${LINE_NAMES[l]}</b> — ${parts.join(", ")}</div>`;
+    if (info.reachedBase) parts.push(`본진 도달 — 본진포탑 ${info.baseTowerSeen?'있음':'없음'}`);
+    if (info.death) parts.push(`${L[info.death.slot]}에서 정찰병 사망(수 미파악)`);
+    if (!parts.length) parts.push("정보 없음");
+    html += `<div class="intel-line"><b>${LINE_NAMES[l]}</b> ${parts.join(" · ")}</div>`;
   }
   div.innerHTML = html || `<span class="hint">아직 정보 없음</span>`;
 }
 
-function slotLabel(s) { return ["내 본진","내 1칸","중앙","적 1칸","적 본진"][s]; }
-
-function aiBaseTowerKnown() {
-  // 정찰로 적 본진 도달한 적 있으면 그 정보 사용(최근)
-  const intel = state.intel[SIDE];
-  for (let l = 0; l < C.LINES; l++) {
-    if (intel[l] && intel[l].reachedBase) return intel[l].baseTowerSeen ? "있음(정찰)" : "없음(정찰)";
-  }
-  return "?";
-}
-
-// ---------- UI 유틸 ----------
-function log(msg) {
+// ---------------- 유틸 ----------------
+function setText(id, v){ document.getElementById(id).textContent = v; }
+function dis(id, v){ document.getElementById(id).disabled = !!v; }
+function logRaw(msg){
   const el = document.getElementById("log");
   const div = document.createElement("div");
+  let cls = ""; if (/⚠/.test(msg)) cls="warn"; if (/파괴|승리|사망/.test(msg)) cls="big";
+  div.className = cls;
   div.innerHTML = `<span class="t">T${state.turn + 1}</span> ${msg}`;
   el.prepend(div);
 }
-function flash(msg) { log(`⚠ ${msg}`); }
-
-function fillLineSelect(id) {
-  const sel = document.getElementById(id);
-  sel.innerHTML = LINE_NAMES.map((n, i) => `<option value="${i}">${n}</option>`).join("");
+let toastTimer;
+function toast(msg, bad){
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.className = "show" + (bad ? " bad" : "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=> t.className = "", 1400);
 }
-
-function fillStyleSelect(id, def) {
+function fillLineSelect(id){
+  document.getElementById(id).innerHTML = LINE_NAMES.map((n,i)=>`<option value="${i}">${n}</option>`).join("");
+}
+function fillStyleSelect(id, def){
   const sel = document.getElementById(id);
-  sel.innerHTML = Object.entries(E.PLAYSTYLES).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join("");
+  sel.innerHTML = Object.entries(E.PLAYSTYLES).map(([k,v])=>`<option value="${k}">${v.name}</option>`).join("");
   if (def) sel.value = def;
 }
 
-// ---------- 바인딩 ----------
-function bind() {
+function bind(){
   ["unitLine","towerLine","scoutLine","attackLine"].forEach(fillLineSelect);
-  fillStyleSelect("simA", "rush"); fillStyleSelect("simB", "turtle");
-  document.getElementById("bWorker").onclick = () => doAction({ type: "worker" });
-  document.getElementById("bUnit").onclick = () => doAction({ type: "unit", line: +document.getElementById("unitLine").value });
-  document.getElementById("bTower").onclick = () => doAction({ type: "tower", line: +document.getElementById("towerLine").value });
-  document.getElementById("bBaseTower").onclick = () => doAction({ type: "baseTower" });
-  document.getElementById("bScout").onclick = () => doAction({ type: "scout", line: +document.getElementById("scoutLine").value });
-  document.getElementById("bAttack").onclick = () => doAction({
-    type: "attack",
-    line: +document.getElementById("attackLine").value,
-    count: +document.getElementById("attackCount").value,
-  });
+  fillStyleSelect("simA","rush"); fillStyleSelect("simB","turtle");
+  const L = i => LINE_NAMES[i];
+  on("bWorker", () => doAction({type:"worker"}, "일꾼 생산"));
+  on("bUnit", () => { const l=+v("unitLine"); doAction({type:"unit",line:l}, `유닛 생산(${L(l)})`); });
+  on("bTower", () => { const l=+v("towerLine"); doAction({type:"tower",line:l}, `포탑 건설(${L(l)})`); });
+  on("bBaseTower", () => doAction({type:"baseTower"}, "본진포탑 건설"));
+  on("bScout", () => { const l=+v("scoutLine"); doAction({type:"scout",line:l}, `정찰(${L(l)})`); });
+  on("bAttack", () => { const l=+v("attackLine"); const c=+v("attackCount")||1;
+    doAction({type:"attack",line:l,count:c}, `공격 ${c}기(${L(l)})`); });
   document.getElementById("attackLine").onchange = renderControls;
-  document.getElementById("bEnd").onclick = endTurn;
-  document.getElementById("bUndo").onclick = undo;
-
-  document.getElementById("bSim").onclick = () => {
-    const a = document.getElementById("simA").value;
-    const b = document.getElementById("simB").value;
-    const n = +document.getElementById("simN").value || 100;
-    const r = E.simulate(a, b, n);
+  on("bEnd", endTurn); on("bUndo", undo); on("bNew", newGame);
+  on("bSim", () => {
+    const r = E.simulate(v("simA"), v("simB"), +v("simN")||100);
     document.getElementById("simOut").textContent =
-      `${r.labelA} ${(r.aRate*100).toFixed(0)}%  |  ${r.labelB} ${(r.bRate*100).toFixed(0)}%  |  무 ${(r.drawRate*100).toFixed(0)}%\n평균 ${r.avgTurns.toFixed(1)}턴 (${n}판)`;
-  };
-  document.getElementById("bSimAll").onclick = () => {
-    const order = Object.keys(E.PLAYSTYLES);
-    let out = "";
-    for (const a of order) for (const b of order) {
-      if (a === b) continue;
-      const r = E.simulate(a, b, 50);
-      out += `${r.labelA} vs ${r.labelB}: ${(r.aRate*100).toFixed(0)}% / ${(r.bRate*100).toFixed(0)}% / 무${(r.drawRate*100).toFixed(0)}% (${r.avgTurns.toFixed(0)}t)\n`;
+      `${r.labelA} ${(r.aRate*100).toFixed(0)}% | ${r.labelB} ${(r.bRate*100).toFixed(0)}% | 무 ${(r.drawRate*100).toFixed(0)}%\n평균 ${r.avgTurns.toFixed(1)}턴 (${r.n}판)`;
+  });
+  on("bSimAll", () => {
+    const order = Object.keys(E.PLAYSTYLES); let out = "";
+    for (const a of order) for (const b of order){ if(a===b) continue;
+      const r = E.simulate(a,b,50);
+      out += `${r.labelA} vs ${r.labelB}: ${(r.aRate*100).toFixed(0)}/${(r.bRate*100).toFixed(0)}/무${(r.drawRate*100).toFixed(0)} (${r.avgTurns.toFixed(0)}t)\n`;
     }
     document.getElementById("simOut").textContent = out;
-  };
+  });
 }
+function on(id, fn){ document.getElementById(id).onclick = fn; }
+function v(id){ return document.getElementById(id).value; }
 
 bind();
 newGame();
-snapshotTurn();
 </script>
 </body>
 </html>
