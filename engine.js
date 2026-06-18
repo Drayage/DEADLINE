@@ -196,9 +196,10 @@
     rng = rng || Math.random;
     // 2. 이동
     resolveMovement(state);
-    // 3. 전투 (칸별 + 본진)
+    // 3. 전투 (칸별 + 본진) + 돌파(이긴 정지군 전진)
     resolveCombat(state);
     resolveBase(state);
+    advanceHalted(state);
     // 4. 수입
     collectIncome(state);
     // 5. 생산 완료
@@ -218,7 +219,7 @@
   function resolveTurnSteps(state) {
     return [
       { name: "이동", apply: () => resolveMovement(state) },
-      { name: "전투", apply: () => { resolveCombat(state); resolveBase(state); } },
+      { name: "전투", apply: () => { resolveCombat(state); resolveBase(state); advanceHalted(state); } },
       { name: "수입", apply: () => collectIncome(state) },
       { name: "생산", apply: () => { completeProduction(state); regenTowers(state); } },
       { name: "정찰", apply: () => resolveScouts(state) },
@@ -311,16 +312,48 @@
           const enemy = enemyOf(owner);
           const enemyArmy = slot.armies[enemy];
           const enemyTower = slot.tower && slot.tower.owner === enemy;
-          if ((enemyArmy && enemyArmy.count > 0) || enemyTower) continue;
+          if ((enemyArmy && enemyArmy.count > 0) || enemyTower) { army._halted = true; continue; } // 정지(전투단계 교전 → 이기면 돌파)
           const ns = s + d;
           if (ns < 0 || ns >= C.SLOTS) continue;
           const mv = extractMoving(slot, owner, state);
           placeMover(slots[ns], owner, mv, state);
         }
       }
-      // _crossed 플래그 정리
+      // _crossed 플래그 정리(_halted는 전투 후 advanceHalted에서 처리)
       for (let s = 0; s < C.SLOTS; s++)
         for (let o = 0; o < 2; o++) { const a = slots[s].armies[o]; if (a) delete a._crossed; }
+    }
+  }
+
+  // 3.5 돌파: 정지(halt)했던 진군군이 전투에서 이겨 칸이 비면 한 칸 전진(본진칸이면 진입 후 즉시 타격).
+  function advanceHalted(state) {
+    for (let l = 0; l < C.LINES; l++) {
+      const slots = state.lines[l];
+      for (let owner = 0; owner < 2; owner++) {
+        const d = dir(owner);
+        const order = d === 1 ? [3, 2, 1, 0] : [1, 2, 3, 4];
+        for (const s of order) {
+          const slot = slots[s];
+          const army = slot.armies[owner];
+          if (!army) continue;
+          if (!army._halted) continue;
+          delete army._halted;
+          if (army.marching <= 0 || army.count <= 0) continue;
+          const enemy = enemyOf(owner);
+          const enemyArmy = slot.armies[enemy];
+          const enemyTower = slot.tower && slot.tower.owner === enemy;
+          if ((enemyArmy && enemyArmy.count > 0) || enemyTower) continue; // 아직 못 이김 → 정지 유지
+          const ns = s + d;
+          if (ns < 0 || ns >= C.SLOTS) continue;
+          const mv = extractMoving(slot, owner, state);
+          placeMover(slots[ns], owner, mv, state);
+          state.log.push(`${LINE_NAMES[l]} 돌파 전진`);
+          // 본진칸 진입 시 그 턴에 본진 타격 반영
+          if (ns === 0 || ns === 4) resolveBaseAt(state, l, ns);
+        }
+      }
+      for (let s = 0; s < C.SLOTS; s++)
+        for (let o = 0; o < 2; o++) { const a = slots[s].armies[o]; if (a) delete a._halted; }
     }
   }
 
@@ -375,51 +408,53 @@
   function normalizeArmy(army, state, side) {
     if (!army || army.count <= 0) return;
     army.hp = army.count * effHp(state, side); // 교전 종료 후 생존 유닛은 풀피
+    if (army.marching > army.count) army.marching = army.count; // 손실 후 진군수 보정
   }
 
   // 본진 칸 처리: 적 유닛이 본진 칸 도달 시 본진포탑 → 일꾼 → 본진
   function resolveBase(state) {
-    for (let l = 0; l < C.LINES; l++) {
-      const slots = state.lines[l];
-      for (const baseSlotIdx of [0, 4]) {
-        const defender = baseSlotIdx === 0 ? 0 : 1;
-        const attacker = enemyOf(defender);
-        const slot = slots[baseSlotIdx];
-        const army = slot.armies[attacker];
-        if (!army || army.count <= 0) continue;
-        const dp = state.players[defender];
-        // 본진포탑(스택)이 있으면 먼저 교전
-        if (dp.baseTower) {
-          let guard = 0;
-          let a = army;
-          while (a && a.count > 0 && dp.baseTower.hp > 0 && guard++ < 300) {
-            const aAtk = a.count * effAtk(state, attacker);
-            const tAtk = towerAtkOf(dp.baseTower.hp);
-            dp.baseTower.hp -= aAtk;
-            a.hp -= tAtk;
-            a.count = a.hp > 0 ? Math.floor(a.hp / effHp(state, attacker)) : 0;
-            if (a.count <= 0) { slot.armies[attacker] = null; a = null; }
-          }
-          if (dp.baseTower.hp <= 0) {
-            dp.baseTower = null;
-            state.log.push(`P${defender} ${LINE_NAMES[l]} 본진포탑 파괴`);
-          }
-          normalizeArmy(slot.armies[attacker], state, attacker);
-        }
-        // 본진포탑 없고 유닛 생존 → 일꾼 → 본진
-        const survivors = slot.armies[attacker];
-        if (!dp.baseTower && survivors && survivors.count > 0) {
-          const n = survivors.count;
-          if (dp.workers > 0) {
-            const killed = Math.min(dp.workers, n);
-            dp.workers -= killed;
-            state.log.push(`P${defender} 일꾼 ${killed} 사망`);
-          } else {
-            const dmg = n * effAtk(state, attacker);
-            dp.baseHp -= dmg;
-            state.log.push(`P${defender} 본진 -${dmg} (HP ${Math.max(0, dp.baseHp)})`);
-          }
-        }
+    for (let l = 0; l < C.LINES; l++)
+      for (const baseSlotIdx of [0, 4]) resolveBaseAt(state, l, baseSlotIdx);
+  }
+
+  function resolveBaseAt(state, l, baseSlotIdx) {
+    const slots = state.lines[l];
+    const defender = baseSlotIdx === 0 ? 0 : 1;
+    const attacker = enemyOf(defender);
+    const slot = slots[baseSlotIdx];
+    const army = slot.armies[attacker];
+    if (!army || army.count <= 0) return;
+    const dp = state.players[defender];
+    // 본진포탑(스택)이 있으면 먼저 교전
+    if (dp.baseTower) {
+      let guard = 0;
+      let a = army;
+      while (a && a.count > 0 && dp.baseTower.hp > 0 && guard++ < 300) {
+        const aAtk = a.count * effAtk(state, attacker);
+        const tAtk = towerAtkOf(dp.baseTower.hp);
+        dp.baseTower.hp -= aAtk;
+        a.hp -= tAtk;
+        a.count = a.hp > 0 ? Math.floor(a.hp / effHp(state, attacker)) : 0;
+        if (a.count <= 0) { slot.armies[attacker] = null; a = null; }
+      }
+      if (dp.baseTower.hp <= 0) {
+        dp.baseTower = null;
+        state.log.push(`P${defender} ${LINE_NAMES[l]} 본진포탑 파괴`);
+      }
+      normalizeArmy(slot.armies[attacker], state, attacker);
+    }
+    // 본진포탑 없고 유닛 생존 → 일꾼 → 본진
+    const survivors = slot.armies[attacker];
+    if (!dp.baseTower && survivors && survivors.count > 0) {
+      const n = survivors.count;
+      if (dp.workers > 0) {
+        const killed = Math.min(dp.workers, n);
+        dp.workers -= killed;
+        state.log.push(`P${defender} 일꾼 ${killed} 사망`);
+      } else {
+        const dmg = n * effAtk(state, attacker);
+        dp.baseHp -= dmg;
+        state.log.push(`P${defender} 본진 -${dmg} (HP ${Math.max(0, dp.baseHp)})`);
       }
     }
   }
@@ -583,44 +618,46 @@
   // AI — 성향 기반 의사결정
   // ========================================================================
   // 성향 파라미터. defends=위협 대응 강도, opportunist=빈 라인 노리기.
+  // atkSize: 공격 규모 범위[min,max] — 게임당 1회 랜덤 고정. 그만큼 모아 그만큼 보냄.
+  // wantLineTower: 위협 라인에 라인포탑도 건설. stackBaseTower: 여유 시 본진포탑 추가 스택.
   const PLAYSTYLES = {
     rush: {
       name: "극한러쉬",
-      targetWorkers: 5,      // 일꾼 거의 안 늘림 → 자연히 유닛으로
+      targetWorkers: 5,
       wantBaseTower: false,
-      attackThreshold: 1,    // 1기만 모여도 바로 보냄(소량씩 = 무지성)
-      attackMax: 2,
-      reserve: 0,            // 방어 예비 없음
-      defends: false,        // 위협 와도 방어 안 함
+      atkSize: [2, 2],
+      reserve: 0,
+      defends: false,
       scoutChance: 0,
     },
     turtle: {
       name: "1포탑배째기",
       targetWorkers: 12,
       wantBaseTower: true,
-      attackThreshold: 12,   // 크게 모은 뒤 한 방 역습
-      attackMax: 99,         // 모은 거 전부
+      atkSize: [5, 6],
       reserve: 3,
       defends: true,
+      wantLineTower: true,
+      stackBaseTower: true,
       scoutChance: 0.1,
     },
     economy: {
       name: "무한경제",
       targetWorkers: 18,
       wantBaseTower: true,
-      attackThreshold: 16,   // 경제 폭발 후 압도적 물량 한 방
-      attackMax: 99,
+      atkSize: [6, 8],
       reserve: 2,
       defends: true,
+      wantLineTower: true,
+      stackBaseTower: true,
       scoutChance: 0.1,
-      researchChance: 0.3,   // 여유 자금으로 업그레이드
+      researchChance: 0.3,
     },
     timing: {
       name: "타이밍러쉬",
       targetWorkers: 7,
       wantBaseTower: false,
-      attackThreshold: 6,    // 방어 갖춰지기 전 타이밍에 전부 모아치기
-      attackMax: 99,
+      atkSize: [3, 4],
       reserve: 0,
       defends: true,
       scoutChance: 0.15,
@@ -630,12 +667,12 @@
       name: "정찰형",
       targetWorkers: 10,
       wantBaseTower: true,
-      attackThreshold: 5,
-      attackMax: 99,
+      atkSize: [4, 5],
       reserve: 1,
       defends: true,
+      wantLineTower: true,
       scoutChance: 0.5,
-      opportunist: true,     // 정찰 정보로 약한 라인 집중
+      opportunist: true,
       researchChance: 0.15,
     },
   };
@@ -671,10 +708,22 @@
     return out;
   }
 
+  // 게임당 1회 성향 수치 확정(공격 규모 범위를 랜덤 고정). state._aiPs[side]에 캐시.
+  function resolveAiPs(state, side, playstyle, rng) {
+    if (!state._aiPs) state._aiPs = [null, null];
+    if (state._aiPs[side]) return state._aiPs[side];
+    const base = typeof playstyle === "string" ? PLAYSTYLES[playstyle] : playstyle;
+    const [mn, mx] = base.atkSize || [3, 3];
+    const size = mn + randInt(rng, mx - mn + 1);
+    const ps = Object.assign({}, base, { attackThreshold: size, attackMax: size });
+    state._aiPs[side] = ps;
+    return ps;
+  }
+
   // AI가 한 턴(행동 2회)을 계획해 실행. 방어는 턴당 1회로 제한(과방어 = 영구 교착 방지).
   function aiTakeTurn(state, side, playstyle, rng) {
     rng = rng || Math.random;
-    const ps = typeof playstyle === "string" ? PLAYSTYLES[playstyle] : playstyle;
+    const ps = resolveAiPs(state, side, playstyle, rng);
     let defenseUsed = 0;
     for (let act = 0; act < C.ACTIONS_PER_TURN; act++) {
       const choice = aiChooseAction(state, side, ps, rng, defenseUsed);
@@ -710,6 +759,21 @@
     // 0.5) 긴급 위협 + 본진포탑 없음 → 비상 본진포탑
     if (totalThreat >= 2 && !p.baseTower && !state.queues[side].baseTower && p.gold >= C.COST_BASE_TOWER) {
       return { type: "baseTower" };
+    }
+
+    // 0.6) 라인포탑: 위협 큰 라인의 내 1칸에 포탑이 없으면 건설(방어 성향)
+    if (ps.wantLineTower && p.gold >= C.COST_TOWER) {
+      for (let l = 0; l < C.LINES; l++) {
+        if (threat[l] >= 2 && !state.lines[l][spawnSlot(side)].tower &&
+            !state.queues[side].towers.some(t => t.line === l)) {
+          return { type: "tower", line: l, count: 1, _defense: defenseUsed === 0 };
+        }
+      }
+    }
+
+    // 0.7) 여유 자금 → 본진포탑 스택 보강(방어 성향)
+    if (ps.stackBaseTower && p.baseTower && p.gold >= C.COST_BASE_TOWER + 100 && totalThreat >= 3) {
+      return { type: "baseTower", count: 1 };
     }
 
     // 1) 공격: 임계 이상 모인 라인이 있으면(예비 reserve 남기고) 모은 병력 모아치기
@@ -840,6 +904,7 @@
     resolveMovement,
     resolveCombat,
     resolveBase,
+    advanceHalted,
     collectIncome,
     completeProduction,
     resolveScouts,

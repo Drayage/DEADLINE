@@ -113,6 +113,19 @@ console.log("== 전투 밸런스 단위 테스트 ==");
   assert(!s.players[1].baseTower, "공격연구1 3유닛(ATK12): 본진포탑1 파괴");
 }
 
+{
+  // 돌파: P0 진군 3기가 적 1칸(slot3) 라인포탑 격파 후 같은 턴 본진 진입→일꾼 타격
+  const s = E.createState();
+  s.lines[0][3].armies[0] = { hp: 30, count: 3, marching: 3 };
+  s.lines[0][3].tower = { owner: 1, hp: 20 }; // 적 라인포탑
+  const w0 = s.players[1].workers;
+  E.resolveMovement(s); E.resolveCombat(s); E.resolveBase(s); E.advanceHalted(s);
+  const atBase = s.lines[0][4].armies[0];
+  assert(!s.lines[0][3].tower, "돌파: 적 1칸 포탑 격파");
+  assert(atBase && atBase.count === 1, "돌파: 승자 1기가 본진칸 진입");
+  assert(s.players[1].workers === w0 - 1, "돌파: 같은 턴 본진 일꾼 타격");
+}
+
 // ---------- AI vs AI 매치업 ----------
 console.log("\n== AI vs AI 100판 승률 ==");
 const matchups = [
