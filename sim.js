@@ -119,7 +119,7 @@ console.log("== 전투 밸런스 단위 테스트 ==");
   s.lines[0][3].armies[0] = { hp: 30, count: 3, marching: 3 };
   s.lines[0][3].tower = { owner: 1, hp: 20 }; // 적 라인포탑
   const w0 = s.players[1].workers;
-  E.resolveMovement(s); E.resolveCombat(s); E.resolveBase(s); E.advanceHalted(s);
+  E.resolveMovement(s); E.resolveCombat(s); E.advanceHalted(s); E.resolveBase(s);
   const atBase = s.lines[0][4].armies[0];
   assert(!s.lines[0][3].tower, "돌파: 적 1칸 포탑 격파");
   assert(atBase && atBase.count === 1, "돌파: 승자 1기가 본진칸 진입");

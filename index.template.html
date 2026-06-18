@@ -345,20 +345,25 @@ async function endTurn() {
     if (st.name === "종료") { st.apply(); break; }
     await showPhase(st.name);
     if (st.name === "전투") {
-      // 교전 전 양측 상태 캡처 → 전투/본진 적용 → 연출 → 돌파 전진
-      const engs = E.detectEngagements(state);
-      const pre = engs.map(e => ({
-        line: e.line, slot: e.slot,
-        where: `${LINE_NAMES[e.line]} · ${["내 본진","내 1칸","중앙","적 1칸","적 본진"][e.slot]}`,
-        meB: describeSide(e.line, e.slot, SIDE),
-        foeB: describeSide(e.line, e.slot, AI),
-      }));
-      E.resolveCombat(state); E.resolveBase(state);
+      // (1) 라인 전투 캡처 → 적용 → 연출
+      const preLine = capturePre(E.detectEngagements(state).filter(e => !e.base));
+      E.resolveCombat(state);
       render();
-      await playCombat(pre);
+      await playCombat(preLine);
+      // (2) 돌파 전진(본진 진입)
       E.advanceHalted(state);
       render();
-      await sleep(300);
+      await sleep(350);
+      // (3) 본진 전투(돌파 진입분 포함) 캡처 → 적용 → 연출
+      const preBase = capturePre(E.detectEngagements(state).filter(e => e.base));
+      if (preBase.length) {
+        E.resolveBase(state);
+        render();
+        await playCombat(preBase);
+      } else {
+        E.resolveBase(state);
+        render();
+      }
     } else if (st.name === "정찰") {
       st.apply();
       render();
@@ -377,6 +382,17 @@ async function endTurn() {
   if (state.winner !== null) return endGame();
   turnSnapshot = JSON.stringify(state);
   render();
+}
+
+// 교전 칸 목록 → 양측 사전 상태 캡처(연출용)
+function capturePre(engs) {
+  const NM = ["내 본진","내 1칸","중앙","적 1칸","적 본진"];
+  return engs.map(e => ({
+    line: e.line, slot: e.slot,
+    where: `${LINE_NAMES[e.line]} · ${NM[e.slot]}`,
+    meB: describeSide(e.line, e.slot, SIDE),
+    foeB: describeSide(e.line, e.slot, AI),
+  }));
 }
 
 function effHpUI(owner){ return C.UNIT_HP + 2 * state.players[owner].research.def; }

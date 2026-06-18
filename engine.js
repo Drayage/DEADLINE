@@ -196,10 +196,10 @@
     rng = rng || Math.random;
     // 2. 이동
     resolveMovement(state);
-    // 3. 전투 (칸별 + 본진) + 돌파(이긴 정지군 전진)
+    // 3. 전투(칸별) → 돌파 전진 → 본진 전투(돌파 진입분 포함)
     resolveCombat(state);
-    resolveBase(state);
     advanceHalted(state);
+    resolveBase(state);
     // 4. 수입
     collectIncome(state);
     // 5. 생산 완료
@@ -219,7 +219,7 @@
   function resolveTurnSteps(state) {
     return [
       { name: "이동", apply: () => resolveMovement(state) },
-      { name: "전투", apply: () => { resolveCombat(state); resolveBase(state); advanceHalted(state); } },
+      { name: "전투", apply: () => { resolveCombat(state); advanceHalted(state); resolveBase(state); } },
       { name: "수입", apply: () => collectIncome(state) },
       { name: "생산", apply: () => { completeProduction(state); regenTowers(state); } },
       { name: "정찰", apply: () => resolveScouts(state) },
@@ -348,8 +348,7 @@
           const mv = extractMoving(slot, owner, state);
           placeMover(slots[ns], owner, mv, state);
           state.log.push(`${LINE_NAMES[l]} 돌파 전진`);
-          // 본진칸 진입 시 그 턴에 본진 타격 반영
-          if (ns === 0 || ns === 4) resolveBaseAt(state, l, ns);
+          // 본진 진입분의 전투는 이후 resolveBase에서 처리(연출 위해 분리)
         }
       }
       for (let s = 0; s < C.SLOTS; s++)
