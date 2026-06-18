@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DEADLINE — 라인 전략 RTS</title>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #161b22; --line: #21262d; --ink: #e6edf3;
+    --muted: #8b949e; --p0: #58a6ff; --p1: #f85149; --gold: #e3b341;
+    --tower: #a371f7; --ok: #3fb950;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
+    font-size: 14px;
+  }
+  header {
+    padding: 10px 16px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 16px; margin: 0; letter-spacing: 2px; }
+  .tag { color: var(--muted); font-size: 12px; }
+  .wrap { display: flex; gap: 16px; padding: 16px; flex-wrap: wrap; align-items: flex-start; }
+  .col { flex: 1 1 520px; min-width: 320px; }
+  .side { flex: 0 0 280px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+  .card h2 { font-size: 13px; margin: 0 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .stats { display: flex; gap: 14px; flex-wrap: wrap; }
+  .stat b { font-size: 18px; }
+  .stat.gold b { color: var(--gold); }
+  .me { color: var(--p0); } .ai { color: var(--p1); }
+
+  table.board { width: 100%; border-collapse: collapse; }
+  table.board td { border: 1px solid var(--line); padding: 6px 4px; text-align: center; height: 56px; width: 20%; vertical-align: middle; }
+  .slot-base { background: #1b2230; }
+  .lineName { writing-mode: horizontal-tb; color: var(--muted); font-size: 12px; }
+  .pill { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 12px; margin: 1px; }
+  .pill.u0 { background: rgba(88,166,255,.18); color: var(--p0); border: 1px solid var(--p0); }
+  .pill.u1 { background: rgba(248,81,73,.18); color: var(--p1); border: 1px solid var(--p1); }
+  .pill.t0 { background: rgba(163,113,247,.18); color: var(--tower); border: 1px solid var(--tower); }
+  .pill.t1 { background: rgba(163,113,247,.12); color: var(--tower); border: 1px dashed var(--tower); }
+  .march { font-weight: bold; }
+  .colhead td { border: none; color: var(--muted); font-size: 11px; height: auto; padding: 2px; }
+
+  .actions { display: flex; flex-direction: column; gap: 8px; }
+  .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  button {
+    background: #21262d; color: var(--ink); border: 1px solid #30363d;
+    border-radius: 6px; padding: 6px 10px; cursor: pointer; font: inherit;
+  }
+  button:hover:not(:disabled) { border-color: var(--p0); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary { background: var(--p0); color: #0d1117; border-color: var(--p0); font-weight: bold; }
+  button.danger { background: var(--p1); color: #0d1117; border-color: var(--p1); }
+  select, input[type=number] { background: #0d1117; color: var(--ink); border: 1px solid #30363d; border-radius: 6px; padding: 5px; font: inherit; }
+  .cost { color: var(--muted); font-size: 11px; }
+  .acts-left { color: var(--ok); }
+  #log { height: 220px; overflow-y: auto; font-size: 12px; line-height: 1.6; }
+  #log .t { color: var(--muted); }
+  .intel-line { font-size: 12px; margin-bottom: 4px; }
+  .banner { text-align: center; font-size: 22px; padding: 20px; }
+  .win { color: var(--ok); } .lose { color: var(--p1); }
+  details summary { cursor: pointer; color: var(--muted); }
+  pre.sim { font-size: 11px; white-space: pre-wrap; background:#0d1117; padding:8px; border-radius:6px; }
+  .hint { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>DEADLINE</h1>
+  <span class="tag">라인 전략 RTS · vs AI</span>
+  <span class="tag" id="turnTag">턴 1</span>
+  <span class="tag acts-left" id="actsTag">행동 2/2</span>
+</header>
+
+<div class="wrap">
+  <div class="col">
+    <div class="card">
+      <h2>전장 (← 내 본진 / 적 본진 →)</h2>
+      <table class="board" id="board"></table>
+      <div class="hint">파란=나(아래쪽 진군 →), 빨강=AI(← 진군). ▸/◂ = 진군 중. T=포탑.</div>
+    </div>
+
+    <div class="card">
+      <h2>내 상태</h2>
+      <div class="stats">
+        <div class="stat gold">골드 <b id="myGold">100</b></div>
+        <div class="stat">일꾼 <b id="myWorkers">5</b> <span class="cost">(턴당 +<span id="myInc">50</span>)</span></div>
+        <div class="stat">본진 HP <b id="myBase">30</b></div>
+        <div class="stat">본진포탑 <b id="myBT">없음</b></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>AI 상태 (보이는 정보만)</h2>
+      <div class="stats">
+        <div class="stat">본진 HP <b id="aiBase">30</b></div>
+        <div class="stat">본진포탑 <b id="aiBT">?</b></div>
+        <div class="stat ai">성향 <b id="aiStyle">?</b></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="side">
+    <div class="card">
+      <h2>행동 (턴당 2회)</h2>
+      <div class="actions">
+        <div class="row">
+          <button id="bWorker">일꾼</button><span class="cost">50G · 턴당 +10</span>
+        </div>
+        <div class="row">
+          <button id="bUnit">유닛</button>
+          <select id="unitLine"></select><span class="cost">50G</span>
+        </div>
+        <div class="row">
+          <button id="bTower">포탑</button>
+          <select id="towerLine"></select><span class="cost">100G · 내 1칸</span>
+        </div>
+        <div class="row">
+          <button id="bBaseTower">본진포탑</button><span class="cost">100G</span>
+        </div>
+        <div class="row">
+          <button id="bScout">정찰</button>
+          <select id="scoutLine"></select><span class="cost">일꾼1 위험</span>
+        </div>
+        <div class="row">
+          <button id="bAttack" class="danger">공격</button>
+          <select id="attackLine"></select>
+          <input type="number" id="attackCount" min="1" value="1" style="width:60px" />
+          <span class="cost">기</span>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <button id="bEnd" class="primary">턴 종료 ▶</button>
+          <button id="bUndo">행동 취소</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>정찰 정보</h2>
+      <div id="intel"><span class="hint">아직 정보 없음</span></div>
+    </div>
+
+    <div class="card">
+      <h2>로그</h2>
+      <div id="log"></div>
+    </div>
+
+    <div class="card">
+      <details>
+        <summary>밸런스 테스트 (AI vs AI)</summary>
+        <div class="row" style="margin:8px 0">
+          <select id="simA"></select> vs <select id="simB"></select>
+          <input type="number" id="simN" value="100" style="width:70px" min="1" />
+          <button id="bSim">실행</button>
+        </div>
+        <pre class="sim" id="simOut">매치업과 판수를 고르고 실행.</pre>
+        <button id="bSimAll">전체 매치업 표</button>
+      </details>
+    </div>
+  </div>
+</div>
+
+<div id="bannerSlot"></div>
+
+<script src="engine.js"></script>
+<script>
+const E = DEADLINE;
+const { C, LINE_NAMES } = E;
+const SIDE = 0, AI = 1;
+
+let state, aiStyle, pending, gameOver;
+
+function newGame() {
+  state = E.createState();
+  // AI 성향 랜덤
+  const styles = Object.keys(E.PLAYSTYLES);
+  aiStyle = styles[Math.floor(Math.random() * styles.length)];
+  pending = []; // 이번 턴 내가 큐에 넣은 행동(취소용 기록)
+  gameOver = false;
+  document.getElementById("bannerSlot").innerHTML = "";
+  log(`새 게임 시작 — AI 성향은 비공개. 행운을 빈다.`);
+  render();
+}
+
+// ---------- 행동 ----------
+function actsLeft() { return C.ACTIONS_PER_TURN - pending.length; }
+
+function doAction(action) {
+  if (gameOver) return;
+  if (actsLeft() <= 0) { flash("행동 횟수 소진"); return; }
+  const snapshotGold = state.players[SIDE].gold;
+  const res = E.applyAction(state, SIDE, action);
+  if (!res.ok) { flash(res.reason); return; }
+  pending.push({ action, goldBefore: snapshotGold });
+  render();
+}
+
+function undo() {
+  // 단순 취소: 마지막 행동을 되돌리기 위해 상태를 재구성하긴 복잡 →
+  // 이번 턴 시작 상태로 전체 롤백.
+  if (pending.length === 0 || gameOver) return;
+  // 가장 단순/안전: 턴 시작 스냅샷에서 다시.
+  rollbackTurn();
+}
+
+let turnSnapshot = null;
+function snapshotTurn() { turnSnapshot = JSON.stringify(state); }
+function rollbackTurn() {
+  if (!turnSnapshot) return;
+  state = JSON.parse(turnSnapshot);
+  pending = [];
+  render();
+}
+
+function endTurn() {
+  if (gameOver) return;
+  // AI 행동
+  E.aiTakeTurn(state, AI, aiStyle, Math.random);
+  // 해결
+  const beforeLog = state.log.length;
+  E.resolveTurn(state, Math.random);
+  // 새 로그 출력
+  for (let i = beforeLog; i < state.log.length; i++) log(state.log[i]);
+  pending = [];
+  if (state.winner !== null) endGame();
+  else { snapshotTurn(); render(); }
+}
+
+function endGame() {
+  gameOver = true;
+  render();
+  const w = state.winner;
+  let msg, cls;
+  if (w === SIDE) { msg = "승리! 적 본진 파괴 🎉"; cls = "win"; }
+  else if (w === "draw") { msg = "무승부 (양측 본진 파괴)"; cls = ""; }
+  else { msg = `패배… 적(${E.PLAYSTYLES[aiStyle].name})에게 본진이 뚫림`; cls = "lose"; }
+  document.getElementById("bannerSlot").innerHTML =
+    `<div class="card banner ${cls}">${msg}<br><button class="primary" onclick="newGame()">다시 하기</button>
+     <span class="hint"> · 상대 성향: ${E.PLAYSTYLES[aiStyle].name}</span></div>`;
+}
+
+// ---------- 렌더 ----------
+function render() {
+  const p = state.players[SIDE], ai = state.players[AI];
+  document.getElementById("turnTag").textContent = `턴 ${state.turn + 1}`;
+  document.getElementById("actsTag").textContent = `행동 ${actsLeft()}/${C.ACTIONS_PER_TURN}`;
+  document.getElementById("myGold").textContent = p.gold;
+  document.getElementById("myWorkers").textContent = p.workers;
+  document.getElementById("myInc").textContent = p.workers * C.GOLD_PER_WORKER;
+  document.getElementById("myBase").textContent = Math.max(0, p.baseHp);
+  document.getElementById("myBT").textContent = p.baseTower ? `HP ${p.baseTower.hp}` : "없음";
+  document.getElementById("aiBase").textContent = Math.max(0, ai.baseHp);
+  // AI 본진포탑은 정찰로만 확정 — 기본 ?, 정찰로 본 적 있으면 표시
+  document.getElementById("aiBT").textContent = aiBaseTowerKnown();
+  document.getElementById("aiStyle").textContent = gameOver ? E.PLAYSTYLES[aiStyle].name : "?";
+
+  renderBoard();
+  renderIntel();
+  renderControls();
+}
+
+function renderBoard() {
+  const tbl = document.getElementById("board");
+  let html = "<tr class='colhead'><td>라인</td><td>내 본진</td><td>내 1칸</td><td>중앙</td><td>적 1칸</td><td>적 본진</td></tr>";
+  for (let l = 0; l < C.LINES; l++) {
+    html += "<tr>";
+    html += `<td class="lineName">${LINE_NAMES[l]}</td>`;
+    for (let s = 0; s < C.SLOTS; s++) {
+      const slot = state.lines[l][s];
+      const isBase = s === 0 || s === 4;
+      let cell = "";
+      // 본진 칸엔 본진포탑 표시
+      if (s === 0 && state.players[SIDE].baseTower) cell += `<span class="pill t0">本塔${state.players[SIDE].baseTower.hp}</span>`;
+      if (s === 4 && state.players[AI].baseTower) cell += `<span class="pill t1">本塔?</span>`;
+      const a0 = slot.armies[0], a1 = slot.armies[1];
+      if (a0 && a0.count) cell += `<span class="pill u0 ${a0.marching?'march':''}">${a0.count}${a0.marching?'▸':''}</span>`;
+      if (a1 && a1.count) cell += `<span class="pill u1 ${a1.marching?'march':''}">${a1.count}${a1.marching?'◂':''}</span>`;
+      if (slot.tower) {
+        const cls = slot.tower.owner === SIDE ? "t0" : "t1";
+        cell += `<span class="pill ${cls}">T${slot.tower.hp}</span>`;
+      }
+      html += `<td class="${isBase?'slot-base':''}">${cell||'·'}</td>`;
+    }
+    html += "</tr>";
+  }
+  tbl.innerHTML = html;
+}
+
+function renderControls() {
+  const p = state.players[SIDE];
+  const can = (cost) => !gameOver && actsLeft() > 0 && p.gold >= cost;
+  document.getElementById("bWorker").disabled = !can(C.COST_WORKER);
+  document.getElementById("bUnit").disabled = !can(C.COST_UNIT);
+  document.getElementById("bTower").disabled = !can(C.COST_TOWER);
+  document.getElementById("bBaseTower").disabled = !can(C.COST_BASE_TOWER) || !!p.baseTower;
+  document.getElementById("bScout").disabled = gameOver || actsLeft() <= 0 || p.workers < 1;
+  document.getElementById("bAttack").disabled = gameOver || actsLeft() <= 0;
+  document.getElementById("bEnd").disabled = gameOver;
+  // 공격 가능 최대 수량 갱신
+  const garr = E.garrisonCounts(state, SIDE);
+  const al = +document.getElementById("attackLine").value;
+  const inp = document.getElementById("attackCount");
+  inp.max = Math.max(1, garr[al] || 1);
+}
+
+function renderIntel() {
+  const div = document.getElementById("intel");
+  const intel = state.intel[SIDE];
+  let html = "";
+  for (let l = 0; l < C.LINES; l++) {
+    const info = intel[l];
+    if (!info) continue;
+    let parts = [];
+    for (const k in info.visible) {
+      const v = info.visible[k];
+      const label = slotLabel(+k);
+      parts.push(`${label}: 적 ${v.count}기${v.tower?'+포탑':''}`);
+    }
+    if (info.reachedBase) parts.push(`본진 도달 — ${info.baseTowerSeen?'본진포탑 있음':'본진포탑 없음'}`);
+    if (info.death) parts.push(`${slotLabel(info.death.slot)}에서 정찰병 사망(수 미파악)`);
+    if (parts.length === 0) parts.push("정보 없음");
+    html += `<div class="intel-line"><b>${LINE_NAMES[l]}</b> — ${parts.join(", ")}</div>`;
+  }
+  div.innerHTML = html || `<span class="hint">아직 정보 없음</span>`;
+}
+
+function slotLabel(s) { return ["내 본진","내 1칸","중앙","적 1칸","적 본진"][s]; }
+
+function aiBaseTowerKnown() {
+  // 정찰로 적 본진 도달한 적 있으면 그 정보 사용(최근)
+  const intel = state.intel[SIDE];
+  for (let l = 0; l < C.LINES; l++) {
+    if (intel[l] && intel[l].reachedBase) return intel[l].baseTowerSeen ? "있음(정찰)" : "없음(정찰)";
+  }
+  return "?";
+}
+
+// ---------- UI 유틸 ----------
+function log(msg) {
+  const el = document.getElementById("log");
+  const div = document.createElement("div");
+  div.innerHTML = `<span class="t">T${state.turn + 1}</span> ${msg}`;
+  el.prepend(div);
+}
+function flash(msg) { log(`⚠ ${msg}`); }
+
+function fillLineSelect(id) {
+  const sel = document.getElementById(id);
+  sel.innerHTML = LINE_NAMES.map((n, i) => `<option value="${i}">${n}</option>`).join("");
+}
+
+function fillStyleSelect(id, def) {
+  const sel = document.getElementById(id);
+  sel.innerHTML = Object.entries(E.PLAYSTYLES).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join("");
+  if (def) sel.value = def;
+}
+
+// ---------- 바인딩 ----------
+function bind() {
+  ["unitLine","towerLine","scoutLine","attackLine"].forEach(fillLineSelect);
+  fillStyleSelect("simA", "rush"); fillStyleSelect("simB", "turtle");
+  document.getElementById("bWorker").onclick = () => doAction({ type: "worker" });
+  document.getElementById("bUnit").onclick = () => doAction({ type: "unit", line: +document.getElementById("unitLine").value });
+  document.getElementById("bTower").onclick = () => doAction({ type: "tower", line: +document.getElementById("towerLine").value });
+  document.getElementById("bBaseTower").onclick = () => doAction({ type: "baseTower" });
+  document.getElementById("bScout").onclick = () => doAction({ type: "scout", line: +document.getElementById("scoutLine").value });
+  document.getElementById("bAttack").onclick = () => doAction({
+    type: "attack",
+    line: +document.getElementById("attackLine").value,
+    count: +document.getElementById("attackCount").value,
+  });
+  document.getElementById("attackLine").onchange = renderControls;
+  document.getElementById("bEnd").onclick = endTurn;
+  document.getElementById("bUndo").onclick = undo;
+
+  document.getElementById("bSim").onclick = () => {
+    const a = document.getElementById("simA").value;
+    const b = document.getElementById("simB").value;
+    const n = +document.getElementById("simN").value || 100;
+    const r = E.simulate(a, b, n);
+    document.getElementById("simOut").textContent =
+      `${r.labelA} ${(r.aRate*100).toFixed(0)}%  |  ${r.labelB} ${(r.bRate*100).toFixed(0)}%  |  무 ${(r.drawRate*100).toFixed(0)}%\n평균 ${r.avgTurns.toFixed(1)}턴 (${n}판)`;
+  };
+  document.getElementById("bSimAll").onclick = () => {
+    const order = Object.keys(E.PLAYSTYLES);
+    let out = "";
+    for (const a of order) for (const b of order) {
+      if (a === b) continue;
+      const r = E.simulate(a, b, 50);
+      out += `${r.labelA} vs ${r.labelB}: ${(r.aRate*100).toFixed(0)}% / ${(r.bRate*100).toFixed(0)}% / 무${(r.drawRate*100).toFixed(0)}% (${r.avgTurns.toFixed(0)}t)\n`;
+    }
+    document.getElementById("simOut").textContent = out;
+  };
+}
+
+bind();
+newGame();
+snapshotTurn();
+</script>
+</body>
+</html>
