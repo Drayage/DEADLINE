@@ -80,6 +80,16 @@
   @keyframes pop{0%{transform:translate(-50%,-50%) scale(.3); opacity:0}50%{transform:translate(-50%,-50%) scale(1.4); opacity:1}100%{transform:translate(-50%,-50%) scale(1)}}
   .fogmark{font-size:20px; opacity:.4; margin:auto}
   .deadmark{font-size:20px; color:var(--gold); margin:auto; animation:pop .4s}
+  /* 룰 모달 본문 */
+  .rulesbody{max-height:min(64vh,560px); overflow-y:auto; padding-right:6px; font-size:13px; line-height:1.65}
+  .rulesbody h3{font-size:13px; margin:14px 0 5px; color:var(--p0); letter-spacing:1px}
+  .rulesbody h3:first-child{margin-top:0}
+  .rulesbody p{margin:0 0 6px; color:#cdd8e8}
+  .rulesbody ul{margin:0 0 6px; padding-left:18px}
+  .rulesbody li{margin-bottom:4px; color:#cdd8e8}
+  .rulesbody b{color:var(--ink)}
+  .rulesbody .tip{background:#0c1626; border:1px solid var(--p0d); border-radius:8px; padding:8px 10px; margin-top:4px}
+  .rulesbody code{background:#0a0f1a; border:1px solid var(--line); border-radius:5px; padding:1px 5px; color:var(--gold)}
   .fogtxt{font-size:10px; color:var(--muted); margin:auto}
   .scoutmk{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:3;
     background:rgba(20,26,38,.95); border:1px solid var(--gold); color:var(--gold);
@@ -273,7 +283,8 @@
   <span class="chip">턴 <b id="turnTag">1</b></span>
   <span class="chip">행동 <b id="actsTag">2/2</b></span>
   <span class="chip">상대 <b id="aiStyle">???</b></span>
-  <button class="ghostbtn" id="bOnline" style="margin-left:auto">🌐 온라인 대전</button>
+  <button class="ghostbtn" id="bRules" style="margin-left:auto" title="게임 방법">📖 룰</button>
+  <button class="ghostbtn" id="bOnline">🌐 온라인 대전</button>
   <button class="ghostbtn" id="bResign" title="항복">🏳 항복</button>
   <button class="ghostbtn" id="bMute" title="소리 켜기/끄기">🔊</button>
   <button class="ghostbtn" id="bNew">⟳ 새 게임</button>
@@ -405,6 +416,15 @@
     </div>
 
     <button class="ghostbtn" id="bLobbyClose" style="width:100%; justify-content:center; margin-top:16px">닫기</button>
+  </div>
+</div>
+
+<!-- 룰(게임 방법) 모달 -->
+<div class="overlay" id="rules" style="display:none">
+  <div class="banner" style="width:min(520px,94vw); text-align:left">
+    <div class="res-big" style="font-size:22px; text-align:center; margin-bottom:12px">📖 게임 방법</div>
+    <div id="rulesBody" class="rulesbody"></div>
+    <button class="primary" id="bRulesClose" style="width:100%; justify-content:center; margin-top:14px">알겠어!</button>
   </div>
 </div>
 
@@ -2300,6 +2320,65 @@ function combatVerdict(meA, foeA) {
   return "교전 지속";
 }
 
+// 룰(게임 방법) 모달 — 상수 기반으로 수치 자동 반영
+function buildRules() {
+  document.getElementById("rulesBody").innerHTML = `
+    <h3>🎯 목표</h3>
+    <p>상대 <b>본진(HP ${C.BASE_HP})</b>을 부수면 승리. 내 본진이 먼저 깨지면 패배.</p>
+
+    <h3>🗺️ 전장</h3>
+    <p>3개 라인(상·중·하), 각 라인은 5칸: <b>내 본진 — 내 1칸 — 중앙 — 적 1칸 — 적 본진</b>.
+    내 본진은 항상 <b>왼쪽</b>으로 보여. 유닛은 <b>내 1칸</b>에서 생산돼 적 본진 쪽으로 진군.</p>
+
+    <h3>🔄 턴 진행</h3>
+    <ul>
+      <li>턴마다 <b>행동 ${C.ACTIONS_PER_TURN}회</b>. 다 고르고 <b>턴 종료</b>를 누르면 양쪽이 동시에 해결돼.</li>
+      <li>해결 순서: 이동 → 전투 → 수입 → 생산 → 정찰.</li>
+      <li><b>중요:</b> 이번 턴에 만든 생산물은 <b>다음 턴부터</b> 움직여(한 턴 지연).</li>
+    </ul>
+
+    <h3>💰 자원</h3>
+    <p>시작: 골드 ${C.START_GOLD} / 일꾼 ${C.START_WORKERS}. 일꾼 1명당 매 턴 <b>+${C.GOLD_PER_WORKER}골드</b>.</p>
+
+    <h3>🛠️ 행동 (비용)</h3>
+    <ul>
+      <li>⛏️ <b>일꾼</b> ${C.COST_WORKER}G — 경제 성장(턴당 골드↑)</li>
+      <li>⚔️ <b>유닛</b> ${C.COST_UNIT}G/기 (HP${C.UNIT_HP}/ATK${C.UNIT_ATK}) — 한 행동에 최대 3기</li>
+      <li>🛡️ <b>라인포탑</b> ${C.COST_TOWER}G (HP${C.TOWER_HP}/ATK${C.TOWER_ATK}) — 내 1칸 방어, 겹쳐 쌓기 가능</li>
+      <li>🏯 <b>본진포탑</b> ${C.COST_BASE_TOWER}G — 본진 최후 방어, 매 턴 +${C.TOWER_REGEN} 회복</li>
+      <li>🗡️ <b>공격연구</b> / 🛡️ <b>방어연구</b> ${C.COST_RESEARCH}G~ — 레벨당 유닛 ATK+2 / HP+3</li>
+      <li>🔭 <b>정찰</b> — 일꾼 1명을 보내 적 라인 정보 수집(위험 부담)</li>
+      <li>💥 <b>공격</b> — 주둔 유닛 중 보낼 수를 골라 진군(매 턴 1칸 전진)</li>
+    </ul>
+
+    <h3>⚔️ 전투</h3>
+    <ul>
+      <li>같은 칸에서 적과 만나면 <b>한쪽이 전멸할 때까지</b> 즉시 결판.</li>
+      <li>총HP·총ATK로 <b>동시에</b> 주고받아: 유닛 ${C.UNIT_HP}/${C.UNIT_ATK}, 포탑 ${C.TOWER_HP}/${C.TOWER_ATK}.</li>
+      <li>예) 유닛 2기 vs 포탑 1 = <b>동귀어진</b>, 3기면 포탑 깨고 1기 침투.</li>
+      <li>포탑은 살아남으면 턴마다 회복 → <b>찔끔 순차 공격은 손해, 모아서 한 번에 치는 게 이득.</b></li>
+    </ul>
+
+    <h3>🏰 본진 방어</h3>
+    <p>적이 본진 칸에 닿으면 <b>본진포탑 → 일꾼 → 본진</b> 순서로 막아. 일꾼이 다 죽으면 본진 HP가 깎이고, 0이 되면 끝.</p>
+
+    <h3>🔭 정찰</h3>
+    <p>정찰병(일꾼)은 공격 안 하고 라인을 지나며 <b>살아남은 칸의 적 정보</b>를 기록. 적 본진까지 닿으면 본진 정보 전부 획득(본진포탑 없으면 무사 귀환). 죽으면 그 일꾼은 잃어.</p>
+
+    <h3>🌐 모드</h3>
+    <p><b>AI 대전</b>(기본) / <b>온라인 대전</b>(방 코드로 친구와 1:1).</p>
+
+    <div class="tip">
+      <h3 style="margin-top:0">💡 초보자 팁</h3>
+      <ul style="margin-bottom:0">
+        <li>처음엔 <b>일꾼 몇 명 + 본진포탑</b>으로 경제·방어를 깔자.</li>
+        <li>공격은 <b>한 라인에 모아서</b> 한 번에 — 포탑 회복을 못 따라잡게.</li>
+        <li><b>정찰</b>로 적이 약한/빈 라인을 찾아 그쪽을 노려.</li>
+        <li>상대가 일꾼만 잔뜩 뽑으면 <b>빨리 밀거나</b> 나도 경제를 키워 격차를 막아.</li>
+      </ul>
+    </div>`;
+}
+
 // 화면 세로 고정 시도(설치형 PWA/지원 브라우저에서만 동작 — 안 되면 CSS #rotate 안내가 폴백)
 function tryLockPortrait() {
   try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock("portrait").catch(() => {}); } catch (e) {}
@@ -2718,6 +2797,10 @@ function bind(){
     doAction({type:"attack",line:l,count:c}, `공격 ${c}기(${L(l)})`); });
   ["unitCount","towerCount","baseTowerCount"].forEach(id=>{ document.getElementById(id).onchange = renderControls; });
   on("bEnd", endTurn); on("bUndo", undo); on("bNew", newGame); on("bResign", resign);
+  // 룰(게임 방법) 모달
+  buildRules();
+  on("bRules", () => { document.getElementById("rules").style.display = "flex"; });
+  on("bRulesClose", () => { document.getElementById("rules").style.display = "none"; });
   // 사운드 토글 + 첫 사용자 제스처에 오디오 시작(브라우저 자동재생 정책) + 세로 고정 시도
   setText("bMute", Sfx.isOn() ? "🔊" : "🔇");
   on("bMute", () => setText("bMute", Sfx.toggle() ? "🔊" : "🔇"));
