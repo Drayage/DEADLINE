@@ -77,6 +77,10 @@
   // 포탑 유효 수 / 공격력 (스택)
   function towerCount(hp) { return Math.ceil(hp / C.TOWER_HP); }
   function towerAtkOf(hp) { return towerCount(hp) * C.TOWER_ATK; }
+  // 연구 비용: 레벨이 오를수록 50G씩 증가(현재 레벨 + 이번 턴 큐 기준).
+  function researchCost(p, branch, queuedExtra) {
+    return C.COST_RESEARCH + 50 * (p.research[branch] + (queuedExtra || 0));
+  }
 
   function createState(opts) {
     opts = opts || {};
@@ -157,8 +161,9 @@
     }
     if (action.type === "research") {
       const branch = action.branch === "def" ? "def" : "atk";
-      if (p.gold < C.COST_RESEARCH) return fail("골드 부족");
-      p.gold -= C.COST_RESEARCH;
+      const cost = researchCost(p, branch, q.research[branch]); // 같은 턴 추가 연구는 더 비쌈
+      if (p.gold < cost) return fail("골드 부족");
+      p.gold -= cost;
       q.research[branch] += 1;
       return ok();
     }
@@ -172,7 +177,9 @@
       const slot = state.lines[action.line][spawnSlot(side)];
       const garr = slot.armies[side];
       if (!garr || garr.count <= 0) return fail("주둔 유닛 없음");
-      let n = action.count == null ? garr.count : Math.min(action.count, garr.count);
+      const avail = garr.count - (garr.marching || 0); // 이번 턴 이미 진군 명령한 수 제외
+      if (avail <= 0) return fail("보낼 주둔 병력 없음");
+      let n = action.count == null ? avail : Math.min(action.count, avail);
       if (n <= 0) return fail("보낼 수량 0");
       // 진군 표시: 이동 단계에서 이동할 수 있도록 marching 플래그.
       // 같은 칸에서 일부만 진군 → 분리. marching 병력은 별도 슬롯 표현 대신
@@ -537,6 +544,7 @@
       for (const sc of q.scouts) {
         if (p.workers <= 0) continue; // 보낼 일꾼 없음
         const result = runScout(state, side, sc.line);
+        result.intel.turn = state.turn; // 이 정보를 본 턴(0-based) 기록
         state.intel[side][sc.line] = result.intel;
         state.scoutAnim.push({
           side, line: sc.line, events: result.events || [],
@@ -919,7 +927,7 @@
     if (ps.timedUpgrade && totalThreat === 0) {
       const br = ps.timedUpgradeBranch || "atk";
       if (p.research[br] < (ps.timedUpgradeCap || 3) &&
-          p.gold >= C.COST_RESEARCH && !state.queues[side].research[br]) {
+          p.gold >= researchCost(p, br) && !state.queues[side].research[br]) {
         const half = side === 0 ? [0, 1, 2] : [2, 3, 4]; // 내 진영+중앙(적 미접촉 구간)
         let pushing = false;
         for (let l = 0; l < C.LINES && !pushing; l++) {
@@ -949,9 +957,9 @@
     }
 
     // 4.5) 연구(여유 자금 + 성향) — 공격/방어 번갈아
-    if (ps.researchChance && p.gold >= C.COST_RESEARCH + C.COST_UNIT && rng() < ps.researchChance) {
+    if (ps.researchChance && rng() < ps.researchChance) {
       const branch = (p.research.atk <= p.research.def) ? "atk" : "def";
-      return { type: "research", branch };
+      if (p.gold >= researchCost(p, branch) + C.COST_UNIT) return { type: "research", branch };
     }
 
     // 5) 유닛 생산 — 한 라인에 몰아주기(모아치기 준비), 한 번에 최대 3마리
@@ -1138,6 +1146,7 @@
     garrisonCounts,
     incomingThreat,
     weakestEnemyLine,
+    researchCost,
     aiTakeTurn,
     aiChooseAction,
     playGame,

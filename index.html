@@ -64,6 +64,9 @@
   .cell .pos{position:absolute; top:3px; left:6px; font-size:9px; color:#46546b; letter-spacing:1px; z-index:1}
   .cell .zoneL{display:flex; flex-direction:column; align-items:flex-start; gap:2px}
   .cell .zoneR{display:flex; flex-direction:column; align-items:flex-end; gap:2px}
+  .cell.own{border-color:var(--p0); box-shadow:inset 0 0 0 1px var(--p0)}
+  .cell.foe{border-color:var(--p1); box-shadow:inset 0 0 0 1px var(--p1)}
+  .cell.contested{border-color:var(--gold); box-shadow:inset 0 0 0 1px var(--gold)}
   .cell.fighting{border-color:var(--bad); box-shadow:0 0 0 2px var(--bad), 0 0 18px rgba(255,91,82,.6); animation:shake .35s}
   .cell .clash{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); font-size:26px; z-index:2; animation:pop .5s ease-out}
   @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
@@ -74,6 +77,9 @@
     background:rgba(20,26,38,.95); border:1px solid var(--gold); color:var(--gold);
     padding:2px 6px; border-radius:8px; font-size:11px; font-weight:800; white-space:nowrap;
     animation:pop .4s}
+  .scoutmk.foe{border-color:var(--p1); color:#ff8079}
+  .obst{font-size:10px; color:var(--muted); background:#0c121e; border:1px solid var(--line);
+    border-radius:6px; padding:0 5px}
 
   /* ---------- 모바일(세로 화면) ---------- */
   html,body{max-width:100%; overflow-x:hidden}
@@ -94,6 +100,9 @@
     .arow button{flex:1 1 auto; min-width:96px; padding:11px 10px; font-size:14px}
     .arow select, .arow input[type=number]{padding:9px 6px; font-size:14px; min-height:40px}
     .cost{flex-basis:100%; font-size:11px; margin-top:-2px}
+    /* 턴종료/취소/실행 등 주요 버튼 터치 타깃 확대(모바일에서 잘 안 눌리던 문제) */
+    #bEnd, #bUndo, #bSim, #bSimAll, .ghostbtn{min-height:48px; padding:12px 14px; font-size:15px}
+    #bUndo{min-width:84px}
     /* 로그/전투창 가독성 */
     #log{height:140px}
     .combat .panel{padding:16px}
@@ -263,7 +272,7 @@
         <div class="arow"><button id="bBaseTower"><span class="btn-ico">🏯</span>본진포탑</button>
           ×<input type="number" id="baseTowerCount" min="1" max="3" value="1" style="width:46px" /><span class="cost">100G·최대3</span></div>
         <div class="arow"><button id="bResAtk"><span class="btn-ico">🗡️</span>공격연구</button>
-          <button id="bResDef"><span class="btn-ico">🛡️</span>방어연구</button><span class="cost">각 100G·+2</span></div>
+          <button id="bResDef"><span class="btn-ico">🛡️</span>방어연구</button><span class="cost" id="resCost">각 100G·+2</span></div>
         <div class="arow"><button id="bScout"><span class="btn-ico">🔭</span>정찰</button><select id="scoutLine"></select><span class="cost">일꾼1 위험</span></div>
         <div class="arow"><button id="bAttack" class="danger"><span class="btn-ico">💥</span>공격</button>
           <span class="lineseg" id="attackLine"></span>
@@ -401,6 +410,10 @@
   // 포탑 유효 수 / 공격력 (스택)
   function towerCount(hp) { return Math.ceil(hp / C.TOWER_HP); }
   function towerAtkOf(hp) { return towerCount(hp) * C.TOWER_ATK; }
+  // 연구 비용: 레벨이 오를수록 50G씩 증가(현재 레벨 + 이번 턴 큐 기준).
+  function researchCost(p, branch, queuedExtra) {
+    return C.COST_RESEARCH + 50 * (p.research[branch] + (queuedExtra || 0));
+  }
 
   function createState(opts) {
     opts = opts || {};
@@ -481,8 +494,9 @@
     }
     if (action.type === "research") {
       const branch = action.branch === "def" ? "def" : "atk";
-      if (p.gold < C.COST_RESEARCH) return fail("골드 부족");
-      p.gold -= C.COST_RESEARCH;
+      const cost = researchCost(p, branch, q.research[branch]); // 같은 턴 추가 연구는 더 비쌈
+      if (p.gold < cost) return fail("골드 부족");
+      p.gold -= cost;
       q.research[branch] += 1;
       return ok();
     }
@@ -496,7 +510,9 @@
       const slot = state.lines[action.line][spawnSlot(side)];
       const garr = slot.armies[side];
       if (!garr || garr.count <= 0) return fail("주둔 유닛 없음");
-      let n = action.count == null ? garr.count : Math.min(action.count, garr.count);
+      const avail = garr.count - (garr.marching || 0); // 이번 턴 이미 진군 명령한 수 제외
+      if (avail <= 0) return fail("보낼 주둔 병력 없음");
+      let n = action.count == null ? avail : Math.min(action.count, avail);
       if (n <= 0) return fail("보낼 수량 0");
       // 진군 표시: 이동 단계에서 이동할 수 있도록 marching 플래그.
       // 같은 칸에서 일부만 진군 → 분리. marching 병력은 별도 슬롯 표현 대신
@@ -861,6 +877,7 @@
       for (const sc of q.scouts) {
         if (p.workers <= 0) continue; // 보낼 일꾼 없음
         const result = runScout(state, side, sc.line);
+        result.intel.turn = state.turn; // 이 정보를 본 턴(0-based) 기록
         state.intel[side][sc.line] = result.intel;
         state.scoutAnim.push({
           side, line: sc.line, events: result.events || [],
@@ -1243,7 +1260,7 @@
     if (ps.timedUpgrade && totalThreat === 0) {
       const br = ps.timedUpgradeBranch || "atk";
       if (p.research[br] < (ps.timedUpgradeCap || 3) &&
-          p.gold >= C.COST_RESEARCH && !state.queues[side].research[br]) {
+          p.gold >= researchCost(p, br) && !state.queues[side].research[br]) {
         const half = side === 0 ? [0, 1, 2] : [2, 3, 4]; // 내 진영+중앙(적 미접촉 구간)
         let pushing = false;
         for (let l = 0; l < C.LINES && !pushing; l++) {
@@ -1273,9 +1290,9 @@
     }
 
     // 4.5) 연구(여유 자금 + 성향) — 공격/방어 번갈아
-    if (ps.researchChance && p.gold >= C.COST_RESEARCH + C.COST_UNIT && rng() < ps.researchChance) {
+    if (ps.researchChance && rng() < ps.researchChance) {
       const branch = (p.research.atk <= p.research.def) ? "atk" : "def";
-      return { type: "research", branch };
+      if (p.gold >= researchCost(p, branch) + C.COST_UNIT) return { type: "research", branch };
     }
 
     // 5) 유닛 생산 — 한 라인에 몰아주기(모아치기 준비), 한 번에 최대 3마리
@@ -1462,6 +1479,7 @@
     garrisonCounts,
     incomingThreat,
     weakestEnemyLine,
+    researchCost,
     aiTakeTurn,
     aiChooseAction,
     playGame,
@@ -1483,10 +1501,11 @@ function newGame() {
   state = E.createState();
   const styles = Object.keys(E.PLAYSTYLES);
   aiStyle = styles[Math.floor(Math.random() * styles.length)];
-  pending = []; gameOver = false;
+  pending = []; gameOver = false; peekBase = false;
   document.getElementById("bannerSlot").innerHTML = "";
   turnSnapshot = JSON.stringify(state);
   logRaw(`새 게임 — 상대 성향은 비공개. 행운을 빈다.`);
+  autofillAll();
   render();
 }
 
@@ -1511,11 +1530,20 @@ function undo() {
 }
 
 let animating = false;
+let peekBase = false; // 본진 침투 순간 적 본진 정보 잠깐 공개용
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+// 수량칸 기본값을 현재 골드/주둔 기준 최대치로(상/중/하 안 눌러도 최대로 시작)
+function autofillAll(){
+  setCount("unitCount", Math.min(3, Math.floor(myGold()/C.COST_UNIT)));
+  setCount("towerCount", Math.min(3, Math.floor(myGold()/C.COST_TOWER)));
+  setCount("baseTowerCount", Math.min(3, Math.floor(myGold()/C.COST_BASE_TOWER)));
+  setCount("attackCount", myGarr(lineVal("attackLine")));
+}
 
 async function endTurn() {
   if (gameOver || animating) return;
   animating = true;
+  peekBase = false;
   pending = [];
   renderControls();
   // AI 행동 결정(비공개)
@@ -1534,8 +1562,10 @@ async function endTurn() {
       await playCombat(preLine);
       // (2) 돌파 전진(본진 진입)
       E.advanceHalted(state);
-      render();
-      await sleep(350);
+      // 본진 침투 시: 포탑과 싸우기 전 적 본진 정보를 잠깐 공개
+      const infil = [0,1,2].some(l => { const a = state.lines[l][4].armies[SIDE]; return a && a.count > 0; });
+      if (infil) { peekBase = true; render(); await sleep(900); }
+      else { render(); await sleep(350); }
       // (3) 본진 전투(돌파 진입분 포함) 캡처 → 적용 → 연출
       const preBase = capturePre(E.detectEngagements(state).filter(e => e.base));
       if (preBase.length) {
@@ -1546,6 +1576,7 @@ async function endTurn() {
         E.resolveBase(state);
         render();
       }
+      peekBase = false;
     } else if (st.name === "정찰") {
       st.apply();
       render();
@@ -1563,6 +1594,7 @@ async function endTurn() {
   animating = false;
   if (state.winner !== null) return endGame();
   turnSnapshot = JSON.stringify(state);
+  autofillAll();   // 새 턴 시작: 수량칸을 기본적으로 최대값으로
   render();
 }
 
@@ -1713,29 +1745,36 @@ async function showCombat(p, meA, foeA) {
 
 // 정찰 애니메이션: 내 정찰병이 라인을 통과하는 연출(칸별 🔭 + HP)
 async function animateScouts() {
-  const list = (state.scoutAnim || []).filter(s => s.side === SIDE);
+  const list = state.scoutAnim || []; // 내 정찰 + 적 정찰 모두 연출
   if (!list.length) { await sleep(200); return; }
   for (const sc of list) {
-    await showPhase(`🔭 ${LINE_NAMES[sc.line]} 정찰`);
+    const mine = sc.side === SIDE;
+    await showPhase(`🔭 ${mine ? "" : "적 "}${LINE_NAMES[sc.line]} 정찰`);
     for (const ev of sc.events) {
       const key = ev.slot === 0 ? "basemine" : ev.slot === 4 ? "baseenemy" : `${sc.line}-${ev.slot}`;
       const cell = document.querySelector(`[data-cell="${key}"]`);
       if (cell) {
         const mk = document.createElement("div");
-        mk.className = "scoutmk";
+        mk.className = "scoutmk" + (mine ? "" : " foe");
         const label = ev.result === "die" ? "🔭💥" :
           ev.result === "return" ? `🔭 귀환 HP${ev.hpAfter}` : `🔭 HP${ev.hpAfter}`;
         mk.textContent = label;
         cell.appendChild(mk);
         setTimeout(() => mk.remove(), 760);
       }
-      await sleep(560);
+      await sleep(mine ? 560 : 430);
     }
-    if (sc.reachedBase) toast(`${LINE_NAMES[sc.line]} 적 본진 도달 — 정보 확보${sc.workerDied ? " (정찰병 전사)" : " (무사 귀환)"}`);
-    else if (sc.workerDied) toast(`${LINE_NAMES[sc.line]} 정찰병 사망`, true);
-    else toast(`${LINE_NAMES[sc.line]} 정찰 귀환`);
+    if (mine) {
+      if (sc.reachedBase) toast(`${LINE_NAMES[sc.line]} 적 본진 도달 — 정보 확보${sc.workerDied ? " (정찰병 전사)" : " (무사 귀환)"}`);
+      else if (sc.workerDied) toast(`${LINE_NAMES[sc.line]} 정찰병 사망`, true);
+      else toast(`${LINE_NAMES[sc.line]} 정찰 귀환`);
+    } else {
+      if (sc.reachedBase) toast(`⚠ 적 정찰병이 ${LINE_NAMES[sc.line]}로 내 본진 정찰`, true);
+      else if (sc.workerDied) toast(`적 정찰병 ${LINE_NAMES[sc.line]}에서 격추`);
+      else toast(`적 정찰병 ${LINE_NAMES[sc.line]} 통과`);
+    }
     render();
-    await sleep(450);
+    await sleep(380);
   }
 }
 
@@ -1801,6 +1840,7 @@ function canSee(line, slot) {
 }
 // 적 본진 시야: 내 유닛이 현재 적 본진 칸에 있을 때만(정찰 정보는 보드에 계속 노출 X → 패널 스냅샷).
 function enemyBaseVisible() {
+  if (peekBase) return true; // 침투 순간 잠깐 공개
   for (let l = 0; l < C.LINES; l++) { const a = state.lines[l][4].armies[SIDE]; if (a && a.count) return true; }
   return false;
 }
@@ -1859,7 +1899,16 @@ function renderField() {
       const mineTower = slot.tower && slot.tower.owner === SIDE ? slot.tower : null;
       const enTower = slot.tower && slot.tower.owner === AI ? slot.tower : null;
 
-      let cls = "cell" + (s === 2 ? " center" : "") + (visible ? "" : " fog");
+      // 점령 테두리: 내 점령=파랑, 적 점령=빨강(보이는 칸만)
+      let occ = "";
+      if (visible) {
+        const mineHere = (mineArmy && mineArmy.count) || mineTower;
+        const enHere = (enArmy && enArmy.count) || enTower;
+        if (mineHere && enHere) occ = " contested";
+        else if (mineHere) occ = " own";
+        else if (enHere) occ = " foe";
+      }
+      let cls = "cell" + (s === 2 ? " center" : "") + (visible ? "" : " fog") + occ;
       let left = "", right = "";
       // 왼쪽 = 나
       if (mineTower) left += towerHtml("t0", "🛡️", mineTower.hp);
@@ -1899,8 +1948,11 @@ function renderControls() {
   dis("bUnit", !can(C.COST_UNIT * qty("unitCount")));
   dis("bTower", !can(C.COST_TOWER * qty("towerCount")));
   dis("bBaseTower", !can(C.COST_BASE_TOWER * qty("baseTowerCount")));
-  dis("bResAtk", !can(C.COST_RESEARCH));
-  dis("bResDef", !can(C.COST_RESEARCH));
+  const rcA = E.researchCost(p, "atk", state.queues[SIDE].research.atk);
+  const rcD = E.researchCost(p, "def", state.queues[SIDE].research.def);
+  dis("bResAtk", !can(rcA));
+  dis("bResDef", !can(rcD));
+  setText("resCost", `공${rcA}G/방${rcD}G·+2`);
   dis("bScout", block || actsLeft() <= 0 || p.workers < 1);
   dis("bAttack", block || actsLeft() <= 0);
   dis("bEnd", block);
@@ -1941,7 +1993,8 @@ function renderIntel() {
     }
     if (info.death) parts.push(`${L[info.death.slot]}에서 정찰병 사망(수 미파악)`);
     if (!parts.length) parts.push("정보 없음");
-    html += `<div class="intel-line"><b>${LINE_NAMES[l]}</b> ${parts.join(" · ")}</div>`;
+    const tt = info.turn != null ? `<span class="obst">T${info.turn + 1} 관측</span> ` : "";
+    html += `<div class="intel-line"><b>${LINE_NAMES[l]}</b> ${tt}${parts.join(" · ")}</div>`;
   }
   div.innerHTML = html || `<span class="hint">아직 정보 없음</span>`;
 }
@@ -1993,19 +2046,22 @@ function bind(){
     doAction({type:"attack",line:l,count:c}, `공격 ${c}기(${L(l)})`); });
   ["unitCount","towerCount","baseTowerCount"].forEach(id=>{ document.getElementById(id).onchange = renderControls; });
   on("bEnd", endTurn); on("bUndo", undo); on("bNew", newGame);
-  on("bSim", () => {
+  // 시뮬은 동기 계산이라 즉시 "계산 중" 표시 후 setTimeout으로 돌려 UI가 멈춘 듯 보이지 않게.
+  const runSim = (fn) => { setText("simOut", "계산 중…"); setTimeout(() => {
+    try { fn(); } catch(e){ setText("simOut", "오류: " + e.message); }
+  }, 30); };
+  on("bSim", () => runSim(() => {
     const r = E.simulate(v("simA"), v("simB"), +v("simN")||100);
-    document.getElementById("simOut").textContent =
-      `${r.labelA} ${(r.aRate*100).toFixed(0)}% | ${r.labelB} ${(r.bRate*100).toFixed(0)}% | 무 ${(r.drawRate*100).toFixed(0)}%\n평균 ${r.avgTurns.toFixed(1)}턴 (${r.n}판)`;
-  });
-  on("bSimAll", () => {
+    setText("simOut", `${r.labelA} ${(r.aRate*100).toFixed(0)}% | ${r.labelB} ${(r.bRate*100).toFixed(0)}% | 무 ${(r.drawRate*100).toFixed(0)}%\n평균 ${r.avgTurns.toFixed(1)}턴 (${r.n}판)`);
+  }));
+  on("bSimAll", () => runSim(() => {
     const order = Object.keys(E.PLAYSTYLES); let out = "";
     for (const a of order) for (const b of order){ if(a===b) continue;
-      const r = E.simulate(a,b,50);
+      const r = E.simulate(a,b,30);
       out += `${r.labelA} vs ${r.labelB}: ${(r.aRate*100).toFixed(0)}/${(r.bRate*100).toFixed(0)}/무${(r.drawRate*100).toFixed(0)} (${r.avgTurns.toFixed(0)}t)\n`;
     }
-    document.getElementById("simOut").textContent = out;
-  });
+    setText("simOut", out);
+  }));
 }
 function on(id, fn){ document.getElementById(id).onclick = fn; }
 function v(id){ return document.getElementById(id).value; }
