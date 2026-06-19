@@ -590,7 +590,7 @@
       if (towerHere) dmg += towerAtkOf(towerHere.hp);
       hp -= dmg;
       if (hp <= 0) {
-        death = { slot: s };
+        death = { slot: s, units: enemyCount, tower: !!towerHere };
         events.push({ slot: s, enemyCount, tower: !!towerHere, dmg, hpAfter: 0, result: "die" });
         return { intel: makeScoutIntel(line, visible, death, false, false, null), workerDied: true, events };
       }
@@ -655,8 +655,8 @@
       scoutChance: 0.1,
       researchChance: 0.3,
     },
-    timing: {
-      name: "타이밍러쉬",
+    timingAtk: {
+      name: "타이밍(공업)",
       targetWorkers: 7,
       greedUntil: 0,
       wantBaseTower: false,
@@ -664,8 +664,22 @@
       reserve: 0,
       defends: true,
       scoutChance: 0.15,
-      timedUpgrade: true,    // 진군 웨이브가 적 1칸 도달 전에 공격연구가 완성되도록 타이밍 공업
-      timedUpgradeCap: 3,    // 이렇게 모인 공업 레벨까지만 타이밍 업글
+      timedUpgrade: true,        // 진군 웨이브가 적 1칸 도달 전에 연구가 완성되도록 타이밍 업글
+      timedUpgradeBranch: "atk", // 공업: 결정타 +ATK로 포탑/주둔 격파
+      timedUpgradeCap: 3,
+    },
+    timingDef: {
+      name: "타이밍(방업)",
+      targetWorkers: 7,
+      greedUntil: 0,
+      wantBaseTower: false,
+      atkSize: [5, 6],
+      reserve: 0,
+      defends: true,
+      scoutChance: 0.15,
+      timedUpgrade: true,
+      timedUpgradeBranch: "def", // 방업: 웨이브 +HP로 포탑/주둔과의 교환에서 더 많이 생존
+      timedUpgradeCap: 3,
     },
     greedyTurtle: {
       name: "무정찰배째기",
@@ -684,13 +698,14 @@
       name: "정찰형",
       targetWorkers: 8,
       greedUntil: 0,
-      wantBaseTower: false,
-      atkSize: [3, 4],       // 정보 기반 빠른 약점 타격
+      wantBaseTower: true,   // (1) 생존성: 본진포탑 확보
+      atkSize: [4, 5],       // opportunist는 4기 이상에서만 공격
       reserve: 0,
       defends: true,
-      scoutChance: 0.18,     // 정찰은 가끔만(템포 손실 최소화)
+      wantLineTower: true,
+      stackBaseTower: true,
       opportunist: true,
-      researchChance: 0.1,
+      adaptive: true,        // 정찰로 적 성향 분류 → 카운터 전략으로 전환
     },
   };
 
@@ -758,6 +773,26 @@
     const totalThreat = threat.reduce((a, b) => a + b, 0);
     // 본진 코앞(인접 칸) 위협 = 긴급
     const urgent = urgentThreat(state, side);
+
+    // 적응형(정찰형): 정찰로 적 성향을 분류해 카운터 전략으로 파라미터를 전환한다.
+    if (ps.adaptive) {
+      ps = adaptScout(state, side, ps);
+      const threatened = totalThreat > 0 || urgent > 0 || baseTowerDamaged(p);
+      const known = ps._enemyType != null;
+      if (!state._scoutCount) state._scoutCount = [0, 0];
+      // 정찰 빈도: T1·T5 강제(안전할 때) + 적 미분류 시 정찰. 위협 중엔 금지, 총 4회 상한.
+      if (!threatened && state.queues[side].scouts.length === 0 && p.workers > 1 &&
+          state._scoutCount[side] < 4 &&
+          (state.turn === 0 || state.turn === 4 || !known)) {
+        state._scoutCount[side] += 1;
+        return { type: "scout", line: pickScoutLine(state, side, rng) };
+      }
+      // T1: 정찰 직후 같은 턴에 일꾼(빌드오더: 정찰+일꾼 → T2 본진포탑)
+      if (!threatened && state.turn === 0 && state.queues[side].scouts.length > 0 &&
+          state.queues[side].workers === 0 && p.gold >= C.COST_WORKER) {
+        return { type: "worker" };
+      }
+    }
 
     // 탐욕 구간: 일꾼이 greedUntil 미만이고 긴급 위협(본진 인접)이 아니면 일꾼만 생산.
     // → 초반 무방비(탐욕)를 만들어 러쉬·타이밍이 처벌할 창을 연다.
@@ -836,8 +871,9 @@
       }
       if (target >= 0) {
         if (ps.opportunist) {
+          // 약한 라인 발견 + 그 라인에 보낼 병력이 공격 임계(4기+) 이상일 때만 그쪽으로 집중
           const weak = weakestEnemyLine(state, side);
-          if (weak >= 0 && garr[weak] - ps.reserve >= 1) target = weak;
+          if (weak >= 0 && garr[weak] - ps.reserve >= ps.attackThreshold) target = weak;
         }
         const sendable = garr[target] - ps.reserve;
         return { type: "attack", line: target, count: Math.min(ps.attackMax, sendable) };
@@ -847,17 +883,20 @@
     // 1.5) 타이밍 공업: 진군 웨이브가 내 진영/중앙을 지나는 동안(=적 1칸 도달 전) 공격연구를
     //      올려, 본진 들어가기 직전 결정타에 +ATK가 적용되게 한다. 같은 라인 반복 찔끔이
     //      아니라 "버프된 한 방"으로 포탑/주둔을 깨는 게 목적.
-    if (ps.timedUpgrade && totalThreat === 0 && p.research.atk < (ps.timedUpgradeCap || 3) &&
-        p.gold >= C.COST_RESEARCH && !state.queues[side].research.atk) {
-      const half = side === 0 ? [0, 1, 2] : [2, 3, 4]; // 내 진영+중앙(아직 적 미접촉 구간)
-      let pushing = false;
-      for (let l = 0; l < C.LINES && !pushing; l++) {
-        for (const sl of half) {
-          const a = state.lines[l][sl].armies[side];
-          if (a && a.marching > 0) { pushing = true; break; }
+    if (ps.timedUpgrade && totalThreat === 0) {
+      const br = ps.timedUpgradeBranch || "atk";
+      if (p.research[br] < (ps.timedUpgradeCap || 3) &&
+          p.gold >= C.COST_RESEARCH && !state.queues[side].research[br]) {
+        const half = side === 0 ? [0, 1, 2] : [2, 3, 4]; // 내 진영+중앙(적 미접촉 구간)
+        let pushing = false;
+        for (let l = 0; l < C.LINES && !pushing; l++) {
+          for (const sl of half) {
+            const a = state.lines[l][sl].armies[side];
+            if (a && a.marching > 0) { pushing = true; break; }
+          }
         }
+        if (pushing) return { type: "research", branch: br };
       }
-      if (pushing) return { type: "research", branch: "atk" };
     }
 
     // 2) 평시 본진포탑(원하면)
@@ -918,6 +957,83 @@
       if (score < bestScore) { bestScore = score; best = l; }
     }
     return best;
+  }
+
+  // 본진포탑이 데미지를 입었는지(=피격 중). 회복으로 곧 차오르므로 "현재 손상" 판정.
+  function baseTowerDamaged(p) {
+    return !!p.baseTower && p.baseTower.hp < towerCount(p.baseTower.hp) * C.TOWER_HP;
+  }
+
+  // 정찰 보낼 라인: 아직 정보 없는 라인 우선, 없으면 랜덤.
+  function pickScoutLine(state, side, rng) {
+    for (let l = 0; l < C.LINES; l++) if (!state.intel[side][l]) return l;
+    return randInt(rng, C.LINES);
+  }
+
+  // 정찰 정보 종합 → 적 프로필. 정보 없으면 null.
+  //  workers: 본진 도달 시에만 파악(아니면 null), units: 목격/사망지점 최대 병력,
+  //  towers: 목격한 (라인/본진)포탑 수, aggressive: 전방 병력이 정찰병을 잡음(공세적 신호).
+  function enemyProfile(state, side) {
+    const intel = state.intel[side];
+    let workers = null, units = 0, aggressive = false, any = false;
+    const towerKeys = new Set();
+    for (let l = 0; l < C.LINES; l++) {
+      const info = intel[l];
+      if (!info) continue;
+      any = true;
+      for (const k in info.visible) {
+        const v = info.visible[k];
+        if (v.count > units) units = v.count;
+        if (v.tower) towerKeys.add("L" + l);
+      }
+      if (info.death) {
+        if ((info.death.units || 0) > units) units = info.death.units;
+        if (info.death.tower) towerKeys.add("L" + l);
+        else if ((info.death.units || 0) > 0) aggressive = true; // 포탑 아닌 병력에 사망
+      }
+      if (info.baseTowerSeen) towerKeys.add("base");
+      if (info.baseInfo) {
+        workers = info.baseInfo.workers;
+        if (info.baseInfo.baseTowerHp > 0) towerKeys.add("base");
+      }
+    }
+    if (!any) return null;
+    return { workers, units, towers: towerKeys.size, aggressive };
+  }
+
+  // 적 성향 분류: RUSH / ECONOMY / GREED_DEFENSE / null.
+  //  포탑을 봤다 → 방어형(배째기). 본진까지 보고 일꾼 많다 → 경제. 전방 병력에 정찰병이
+  //  잡혔다(포탑 아님) → 러쉬.
+  function classifyEnemy(prof) {
+    if (!prof) return null;
+    if (prof.towers >= 1) return "GREED_DEFENSE";
+    if (prof.aggressive || prof.units >= 3) return "RUSH";
+    if (prof.workers != null && prof.workers >= 7) return "ECONOMY";
+    return null;
+  }
+
+  // 적응형 정찰형: 분류 결과에 따라 파라미터 세트를 카운터 전략으로 전환.
+  //   적 경제 → 타이밍러쉬 / 적 러쉬 → 방어 후 역공 / 적 배째기 → 경제형(더 배째기).
+  function adaptScout(state, side, ps) {
+    if (!state._scoutType) state._scoutType = [null, null];
+    const t = classifyEnemy(enemyProfile(state, side));
+    if (t) state._scoutType[side] = t; // 마지막 분류 유지(정보 사라져도 전략 고수)
+    const type = state._scoutType[side];
+    const o = Object.assign({}, ps);
+    o._enemyType = type;
+    if (type === "RUSH") {            // DEFENSE_MODE: 본진포탑으로 막으며 경제 키워 역공
+      o.targetWorkers = 10; o.attackThreshold = 5; o.attackMax = 6;
+      o.reserve = 3; o.opportunist = false;
+      o.wantBaseTower = true; o.wantLineTower = true; o.stackBaseTower = true;
+    } else if (type === "ECONOMY") {  // TIMING_RUSH_MODE: 버프 결정타로 경제 처벌
+      o.targetWorkers = 7; o.attackThreshold = 5; o.attackMax = 5;
+      o.reserve = 0; o.opportunist = false; o.wantBaseTower = false; // 동일 라인 집중·공세 전념
+      o.timedUpgrade = true; o.timedUpgradeBranch = "atk"; o.timedUpgradeCap = 2;
+    } else if (type === "GREED_DEFENSE") { // ECONOMY_MODE: 배째기보다 더 배째기
+      o.targetWorkers = 15; o.greedUntil = 13;
+      o.wantBaseTower = true; o.attackThreshold = 6; o.attackMax = 7; o.opportunist = true;
+    }
+    return o;
   }
 
   // ========================================================================
