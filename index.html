@@ -171,8 +171,12 @@
     20%{opacity:1; transform:translate(-50%,-70%) scale(1.2)}100%{opacity:0; transform:translate(-50%,-180%) scale(1)}}
   .pulse{animation:pulsejmp .55s}
   @keyframes pulsejmp{0%{transform:scale(1)}40%{transform:scale(1.35)}100%{transform:scale(1)}}
-  .cell.producing{box-shadow:inset 0 0 0 2px var(--ok),0 0 16px rgba(74,208,106,.6)!important; animation:pop .55s}
-  .basecell.producing{box-shadow:inset 0 0 0 2px var(--ok),0 0 18px rgba(74,208,106,.6)!important; animation:pop .55s}
+  .cell.producing{animation:producepop .6s ease-out}
+  .basecell.producing{animation:producepop .6s ease-out}
+  /* 제자리 글로우+스케일(translate 없음 — 그리드 셀이 튀지 않게) */
+  @keyframes producepop{0%{box-shadow:inset 0 0 0 2px var(--ok); transform:scale(1)}
+    40%{box-shadow:inset 0 0 0 2px var(--ok),0 0 18px rgba(74,208,106,.7); transform:scale(1.06)}
+    100%{box-shadow:none; transform:scale(1)}}
   /* 가로 화면 회전 안내(휴대폰) */
   #rotate{position:fixed; inset:0; z-index:90; background:var(--bg); display:none;
     flex-direction:column; align-items:center; justify-content:center; gap:14px; text-align:center; padding:24px}
@@ -1614,6 +1618,7 @@
     playGame,
     simulate,
     // 방향 헬퍼(테스트/UI용)
+    checkVictory,
     spawnSlot, enemyBaseSlot, ownBaseSlot, enemyOf, dir,
   };
 });
@@ -1868,6 +1873,9 @@ async function runResolution() {
         render();
       }
       peekBase = false;
+      // 본진 파괴 시 전투 단계에서 즉시 승패 결정(수입/생산/정찰 생략). 동시 파괴=무승부 보존.
+      E.checkVictory(state);
+      if (state.winner !== null) break;
     } else if (st.name === "정찰") {
       st.apply();
       render();
@@ -1879,9 +1887,12 @@ async function runResolution() {
       if (gained > 0) { floatOn("myGold", "+" + gained, "gold"); pulse("myGold"); Sfx.income(); }
       await sleep(600);
     } else if (st.name === "생산") {
-      const hadProd = myQueueHasProduction();
+      // apply 전 큐 스냅샷 → 실제 생산된 라인/본진만 반짝(생산 안 한 칸은 안 빛나게)
+      const q = state.queues[SIDE];
+      const prodLines = new Set([...q.units.map(u => u.line), ...q.towers.map(t => t.line)]);
+      const prodBase = q.baseTower > 0 || q.workers > 0;
       st.apply(); render();
-      if (hadProd) { popSpawned(); Sfx.produce(); }
+      if (prodLines.size || prodBase) { popSpawned(prodLines, prodBase); Sfx.produce(); }
       await sleep(650);
     } else {
       st.apply();
@@ -2057,9 +2068,9 @@ async function showBaseCombat(p) {
   const meA = describeSide(p.line, p.slot, SIDE), foeA = describeSide(p.line, p.slot, OPP);
   const cons = combatConsequences(p, meA, foeA);
   document.getElementById("combatResult").innerHTML =
-    `<div class="verdict">${combatVerdict(meA, foeA)}</div>` +
+    `<div class="verdict">${baseVerdict(p)}</div>` +
     (cons.length ? `<ul class="conseq">${cons.map(c => `<li>${c}</li>`).join("")}</ul>` : "");
-  await sleep(1500);
+  await sleep(1600);
   ov.className = "combat";
   await sleep(260);
 }
@@ -2140,18 +2151,15 @@ function pulse(id) {
   el.classList.remove("pulse"); void el.offsetWidth; el.classList.add("pulse");
   setTimeout(() => el.classList.remove("pulse"), 600);
 }
-// 생산 단계: 내 생산 도착 칸(내 1칸들 + 본진) 반짝
-function popSpawned() {
-  for (let l = 0; l < C.LINES; l++) flashProduce(cellKey(l, mySpawn()));
-  flashProduce("basemine");
+// 생산 단계: 실제 생산된 라인의 내 1칸 + (일꾼/본진포탑 생산 시) 본진만 반짝
+function popSpawned(lines, base) {
+  lines.forEach(l => flashProduce(cellKey(l, mySpawn())));
+  if (base) flashProduce("basemine");
 }
 function flashProduce(key) {
   const cell = document.querySelector(`[data-cell="${key}"]`); if (!cell) return;
+  cell.classList.remove("producing"); void cell.offsetWidth;   // 재시작
   cell.classList.add("producing"); setTimeout(() => cell.classList.remove("producing"), 750);
-}
-function myQueueHasProduction() {
-  const q = state.queues[SIDE];
-  return q.workers > 0 || q.units.length > 0 || q.towers.length > 0 || q.baseTower > 0;
 }
 // 한쪽 HP/수량을 before→after 로 부드럽게 카운트다운(수치 변화가 잘 보이게)
 function tweenSide(elId, from, to) {
@@ -2162,7 +2170,7 @@ function tweenSide(elId, from, to) {
     const fromHp = from.hp, toHp = to ? to.hp : 0, maxHp = from.maxHp || 1;
     const fromCnt = from.count, toCnt = to ? to.count : 0;
     if (toHp < fromHp) { el.classList.add("hurt"); setTimeout(() => el.classList.remove("hurt"), 420); }
-    const dur = 850, t0 = performance.now();
+    const dur = 1100, t0 = performance.now();   // HP 감소가 눈에 인지되게 천천히
     function frame(now) {
       const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 2);
       const hp = fromHp + (toHp - fromHp) * e;
@@ -2251,6 +2259,18 @@ async function animateScouts() {
     render();
     await sleep(380);
   }
+}
+
+// 본진 교전 결과 문구(유닛 기준 "교전 지속" 대신 본진 관점)
+function baseVerdict(p) {
+  const def = p.snap.def, dp = state.players[def];
+  const atkSide = E.enemyOf(def);
+  const atkPost = describeSide(p.line, p.slot, atkSide);
+  const atkGone = !atkPost || atkPost.count <= 0;
+  const iAttack = (atkSide === SIDE);   // 내가 공격 중인가
+  if (dp.baseHp <= 0) return iAttack ? "적 본진 함락!" : "내 본진 함락…";
+  if (atkGone) return iAttack ? "침투 격퇴당함…" : "적 침투 격퇴!";
+  return iAttack ? "적 본진 타격!" : "내 본진 피해!";
 }
 
 function combatVerdict(meA, foeA) {

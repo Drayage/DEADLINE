@@ -1203,6 +1203,7 @@
     playGame,
     simulate,
     // 방향 헬퍼(테스트/UI용)
+    checkVictory,
     spawnSlot, enemyBaseSlot, ownBaseSlot, enemyOf, dir,
   };
 });
