@@ -74,6 +74,33 @@
     background:rgba(20,26,38,.95); border:1px solid var(--gold); color:var(--gold);
     padding:2px 6px; border-radius:8px; font-size:11px; font-weight:800; white-space:nowrap;
     animation:pop .4s}
+
+  /* ---------- 모바일(세로 화면) ---------- */
+  html,body{max-width:100%; overflow-x:hidden}
+  @media (max-width:720px){
+    body{font-size:13px}
+    .wrap{flex-direction:column; gap:12px; padding:10px}
+    .col{flex:1 1 100%; min-width:0; width:100%}
+    .side{flex:1 1 100%; width:100%}
+    /* 보드: 본진/라벨 칸 축소 + 행 높이 축소로 가로 넘침 방지 */
+    .field{grid-template-columns:62px 18px 1fr 1fr 1fr 62px; grid-auto-rows:64px; gap:5px}
+    .basecell{padding:6px 3px}
+    .basecell .blabel{font-size:9px; top:4px}
+    .llabel{font-size:11px; letter-spacing:1px}
+    .cell{padding:3px 4px}
+    .cell .pos{font-size:8px}
+    /* 생산/행동: 터치 타깃 키우고 줄바꿈 정리 */
+    .arow{gap:5px}
+    .arow button{flex:1 1 auto; min-width:96px; padding:11px 10px; font-size:14px}
+    .arow select, .arow input[type=number]{padding:9px 6px; font-size:14px; min-height:40px}
+    .cost{flex-basis:100%; font-size:11px; margin-top:-2px}
+    /* 로그/전투창 가독성 */
+    #log{height:140px}
+    .combat .panel{padding:16px}
+    .combat .cside{min-width:0; padding:10px 6px}
+    .combat .cside .cicon{font-size:28px}
+    .combat .result .conseq li{font-size:12px}
+  }
   .phasebadge{position:fixed; top:64px; left:50%; transform:translateX(-50%); z-index:45;
     background:#1b2435; border:1px solid var(--p0); padding:8px 20px; border-radius:20px; font-weight:800;
     opacity:0; transition:.2s}
@@ -103,7 +130,11 @@
   .combat .bigbar .lab{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
     font-size:10px; font-weight:800; color:#eaf1fb; text-shadow:0 1px 2px #000}
   .combat .swords{font-size:34px; align-self:center; animation:pop .5s}
-  .combat .result{margin-top:18px; font-size:17px; font-weight:900; color:var(--gold); min-height:22px}
+  .combat .result{margin-top:16px; min-height:22px}
+.combat .result .verdict{font-size:17px; font-weight:900; color:var(--gold)}
+.combat .result .conseq{list-style:none; margin:10px 0 0; padding:0; display:flex; flex-direction:column; gap:4px}
+.combat .result .conseq li{font-size:13px; font-weight:700; color:#dbe6f5; background:#0c121e;
+  border:1px solid var(--line); border-radius:7px; padding:4px 8px}
 
   /* 유닛 토큰 */
   .stack{display:flex; align-items:center; gap:5px; font-weight:800}
@@ -1066,6 +1097,21 @@
     // 본진 코앞(인접 칸) 위협 = 긴급
     const urgent = urgentThreat(state, side);
 
+    // [공통·예외없음] 본진 침투 긴급 방어: 본진 칸에 적 유닛이 있고 본진포탑이 없으면
+    // 빌드/전략 무시하고 본진포탑 건설을 최우선(못 사면 저축 — 무의미한 행동 금지).
+    {
+      const en = enemyOf(side);
+      const bs = ownBaseSlot(side);
+      let intruder = false;
+      for (let l = 0; l < C.LINES; l++) {
+        const a = state.lines[l][bs].armies[en];
+        if (a && a.count > 0) { intruder = true; break; }
+      }
+      if (intruder && !p.baseTower && !state.queues[side].baseTower) {
+        return p.gold >= C.COST_BASE_TOWER ? { type: "baseTower" } : null;
+      }
+    }
+
     // 적응형(정찰형): 정찰로 적 성향을 분류해 카운터 전략으로 파라미터를 전환한다.
     if (ps.adaptive) {
       // 상대가 실제로 날 공격해오면(공격형) 기록 — 경제로 분류됐어도 대응을 바꾼다.
@@ -1517,15 +1563,50 @@ async function endTurn() {
   render();
 }
 
-// 교전 칸 목록 → 양측 사전 상태 캡처(연출용)
+// 교전 칸 목록 → 양측 사전 상태 캡처(연출용). 본진칸은 후속효과 계산용 스냅샷도 저장.
 function capturePre(engs) {
   const NM = ["내 본진","내 1칸","중앙","적 1칸","적 본진"];
-  return engs.map(e => ({
-    line: e.line, slot: e.slot,
-    where: `${LINE_NAMES[e.line]} · ${NM[e.slot]}`,
-    meB: describeSide(e.line, e.slot, SIDE),
-    foeB: describeSide(e.line, e.slot, AI),
-  }));
+  return engs.map(e => {
+    const o = {
+      line: e.line, slot: e.slot,
+      where: `${LINE_NAMES[e.line]} · ${NM[e.slot]}`,
+      meB: describeSide(e.line, e.slot, SIDE),
+      foeB: describeSide(e.line, e.slot, AI),
+    };
+    if (e.slot === 0 || e.slot === 4) {
+      const def = e.slot === 0 ? SIDE : AI; // 본진 칸의 수비측
+      const dp = state.players[def];
+      o.snap = { def, workers: dp.workers, baseHp: dp.baseHp, baseTowerHp: dp.baseTower ? dp.baseTower.hp : 0 };
+    }
+    return o;
+  });
+}
+
+// 전투 후속효과 라인업("그래서 무슨 일이?"): 파괴/침투/일꾼사망/본진피해/생존.
+function combatConsequences(p, meA, foeA) {
+  const out = [];
+  if (p.snap) { // 본진 전투
+    const dp = state.players[p.snap.def];
+    const defWho = p.snap.def === SIDE ? "내" : "적";
+    const atkWho = p.snap.def === SIDE ? "적" : "내";
+    if (p.snap.baseTowerHp > 0 && !dp.baseTower) out.push(defWho + " 본진포탑 파괴");
+    const wk = p.snap.workers - dp.workers; if (wk > 0) out.push(`${defWho} 일꾼 ${wk}명 사망`);
+    const bd = p.snap.baseHp - dp.baseHp; if (bd > 0) out.push(`${defWho} 본진 -${bd}`);
+    const atkAfter = p.slot === 4 ? meA : foeA;
+    if (atkAfter && atkAfter.count > 0) out.push(`${atkWho} 유닛 ${atkAfter.count}기 침투`);
+    return out;
+  }
+  // 라인/포탑 전투: 양측 결과
+  const outcome = (before, after, who) => {
+    if (!before) return;
+    const gone = !after || after.count <= 0;
+    if (before.name.includes("본진포탑")) { if (gone) out.push(who + " 본진포탑 파괴"); }
+    else if (before.name.includes("포탑")) { if (gone) out.push(who + " 포탑 파괴"); }
+    else if (gone) out.push(who + " 병력 전멸");
+    else if (after && after.count > 0) out.push(`${who} 유닛 ${after.count}기 생존`);
+  };
+  outcome(p.meB, meA, "내"); outcome(p.foeB, foeA, "적");
+  return out;
 }
 
 function effHpUI(owner){ return C.UNIT_HP + 2 * state.players[owner].research.def; }
@@ -1562,7 +1643,7 @@ async function playCombat(pre) {
     flashCell(p.line, p.slot);
     const meA = describeSide(p.line, p.slot, SIDE);
     const foeA = describeSide(p.line, p.slot, AI);
-    await showCombat(p.where, p.meB, p.foeB, meA, foeA);
+    await showCombat(p, meA, foeA);
   }
 }
 
@@ -1607,19 +1688,22 @@ function applyAfter(elId, d) {
   if (cnt) cnt.textContent = d.count;
 }
 
-async function showCombat(where, meB, foeB, meA, foeA) {
+async function showCombat(p, meA, foeA) {
   const ov = document.getElementById("combat");
-  document.getElementById("combatWhere").textContent = where;
-  document.getElementById("cMe").innerHTML = sideHtml("me", meB);
-  document.getElementById("cFoe").innerHTML = sideHtml("foe", foeB);
-  document.getElementById("combatResult").textContent = "";
+  document.getElementById("combatWhere").textContent = p.where;
+  document.getElementById("cMe").innerHTML = sideHtml("me", p.meB);
+  document.getElementById("cFoe").innerHTML = sideHtml("foe", p.foeB);
+  document.getElementById("combatResult").innerHTML = "";
   ov.className = "combat show";
   await sleep(750);
-  // HP 게이지 드레인 + 결과
+  // HP 게이지 드레인 + 결과(승패 + 후속효과)
   applyAfter("cMe", meA);
   applyAfter("cFoe", foeA);
-  document.getElementById("combatResult").textContent = combatVerdict(meA, foeA);
-  await sleep(1050);
+  const cons = combatConsequences(p, meA, foeA);
+  document.getElementById("combatResult").innerHTML =
+    `<div class="verdict">${combatVerdict(meA, foeA)}</div>` +
+    (cons.length ? `<ul class="conseq">${cons.map(c => `<li>${c}</li>`).join("")}</ul>` : "");
+  await sleep(cons.length > 2 ? 1500 : 1100);
   ov.className = "combat";
   await sleep(180);
 }

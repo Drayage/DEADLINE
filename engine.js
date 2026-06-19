@@ -776,6 +776,21 @@
     // 본진 코앞(인접 칸) 위협 = 긴급
     const urgent = urgentThreat(state, side);
 
+    // [공통·예외없음] 본진 침투 긴급 방어: 본진 칸에 적 유닛이 있고 본진포탑이 없으면
+    // 빌드/전략 무시하고 본진포탑 건설을 최우선(못 사면 저축 — 무의미한 행동 금지).
+    {
+      const en = enemyOf(side);
+      const bs = ownBaseSlot(side);
+      let intruder = false;
+      for (let l = 0; l < C.LINES; l++) {
+        const a = state.lines[l][bs].armies[en];
+        if (a && a.count > 0) { intruder = true; break; }
+      }
+      if (intruder && !p.baseTower && !state.queues[side].baseTower) {
+        return p.gold >= C.COST_BASE_TOWER ? { type: "baseTower" } : null;
+      }
+    }
+
     // 적응형(정찰형): 정찰로 적 성향을 분류해 카운터 전략으로 파라미터를 전환한다.
     if (ps.adaptive) {
       // 상대가 실제로 날 공격해오면(공격형) 기록 — 경제로 분류됐어도 대응을 바꾼다.
