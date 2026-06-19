@@ -3,13 +3,17 @@
  * 온라인 대전은 Firebase(교차출처) 네트워크가 필요하므로 캐시하지 않는다.
  * index.html 갱신 시 CACHE 버전을 올린다.
  */
-const CACHE = "deadline-v1";
+const CACHE = "deadline-v2";
 const SHELL = [
   "./",
   "./index.html",
   "./manifest.json",
   "./icon.svg",
   "./icon-maskable.svg",
+  "./icon-192.png",
+  "./icon-512.png",
+  "./icon-maskable-512.png",
+  "./apple-touch-icon-180.png",
 ];
 
 self.addEventListener("install", (e) => {
