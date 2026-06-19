@@ -29,13 +29,23 @@
 
 1. [Firebase 콘솔](https://console.firebase.google.com)에서 프로젝트 생성 → **Realtime
    Database** 활성화.
-2. **규칙**을 방 단위 읽기/쓰기로 설정:
-   ```json
-   { "rules": { "rooms": { "$code": { ".read": true, ".write": true } } } }
-   ```
+2. **규칙**: `database.rules.json` 내용을 콘솔 → Realtime Database → 규칙에 붙여넣기.
+   `rooms/<코드>`만 읽기/쓰기 허용하고 구조·크기를 강하게 검증한다(DB 악용/거대
+   페이로드 스팸 차단).
 3. 웹 앱 등록 후 발급되는 config를 `index.template.html`의 `FIREBASE_CONFIG`에 넣고
-   `node build.js`로 재빌드. (웹 apiKey는 공개돼도 정상 — 보안은 위 DB 규칙으로.)
+   `node build.js`로 재빌드.
 4. GitHub Pages 활성화(레포 Settings → Pages → 루트). 푸시하면 배포된다.
+
+### 보안 메모
+
+- **웹 apiKey는 비밀이 아니다** — Firebase 설계상 클라이언트에 공개되는 프로젝트
+  식별자이며 접근 권한을 주지 않는다. (GitHub 시크릿 스캐너가 경고해도 로테이트 불필요.)
+  실제 접근 통제는 위 **DB 규칙**이 한다.
+- **apiKey 사용 제한(권장)**: Google Cloud 콘솔 → API 및 서비스 → 사용자 인증 정보 →
+  해당 키 → *애플리케이션 제한사항*을 **HTTP 리퍼러**로 두고 배포 도메인
+  (`https://<사용자>.github.io/*`)만 허용 → 키 도용 방지.
+- 무료(Spark) 요금제라 과금은 없고, 릴레이라 각 클라가 전체 상태를 가진다 → **친구 간
+  캐주얼 대전용**. 더 강하게 잠그려면 익명 인증을 켜고 규칙에 `auth != null`을 추가.
 
 ## PWA (설치 / 오프라인 싱글플레이)
 
@@ -53,6 +63,7 @@
 - `build.js` — `engine.js`를 `index.template.html`에 인라인해 `index.html` 생성.
 - `sim.js` — Node용 밸런스 테스트 + 락스텝 결정성 테스트 러너.
 - `manifest.json` · `sw.js` · `icon.svg` · `icon-maskable.svg` — PWA(설치/오프라인) 자산.
+- `database.rules.json` — 온라인 대전용 Firebase Realtime DB 보안 규칙(콘솔에 붙여넣기).
 
 > 엔진이나 템플릿을 고치면 `node build.js`로 `index.html`을 다시 생성한다.
 

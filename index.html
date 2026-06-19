@@ -2177,13 +2177,15 @@ function makeNet(code, side) {
       oppRef.on("value", snap => { if (!snap.exists()) onGone(); });
     },
     submitTurn(n, s, actions) {
-      return roomRef.child("turns/" + n + "/" + s).set({ actions: actions || [] });
+      // submitted:true 마커 필수 — 행동 0개면 actions:[]가 Firebase에서 사라져
+      // 상대 리스너가 영영 안 깨어나는 교착이 생긴다(빈 노드는 exists()=false).
+      return roomRef.child("turns/" + n + "/" + s).set({ submitted: true, actions: actions || [] });
     },
     awaitOpponentTurn(n) {
       const ref = roomRef.child("turns/" + n + "/" + E.enemyOf(side));
       return new Promise(resolve => {
         const handler = snap => {
-          if (snap.exists()) { ref.off("value", handler); resolve(snap.val().actions || []); }
+          if (snap.exists()) { ref.off("value", handler); resolve((snap.val() && snap.val().actions) || []); }
         };
         ref.on("value", handler);
       });

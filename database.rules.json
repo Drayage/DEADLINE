@@ -1,0 +1,52 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "rooms": {
+      "$code": {
+        ".read": true,
+        ".write": true,
+        ".validate": "$code.matches(/^[A-Z0-9]{4,6}$/)",
+
+        "meta": {
+          ".validate": "newData.hasChildren(['createdAt','status'])",
+          "createdAt": { ".validate": "newData.isNumber()" },
+          "seed": { ".validate": "newData.isNumber()" },
+          "status": { ".validate": "newData.isString() && newData.val().matches(/^(waiting|playing|ended)$/)" },
+          "$other": { ".validate": false }
+        },
+
+        "players": {
+          "0": { "joined": { ".validate": "newData.isBoolean()" }, "$o": { ".validate": false } },
+          "1": { "joined": { ".validate": "newData.isBoolean()" }, "$o": { ".validate": false } },
+          "$other": { ".validate": false }
+        },
+
+        "turns": {
+          "$n": {
+            ".validate": "$n.matches(/^[0-9]{1,4}$/)",
+            "$side": {
+              ".validate": "$side.matches(/^[01]$/) && newData.hasChild('submitted')",
+              "submitted": { ".validate": "newData.isBoolean()" },
+              "actions": {
+                ".validate": "!newData.exists() || newData.hasChildren()",
+                "$i": {
+                  ".validate": "$i.matches(/^[0-9]{1,2}$/)",
+                  "type":   { ".validate": "newData.isString() && newData.val().length <= 16" },
+                  "line":   { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 2" },
+                  "count":  { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 99" },
+                  "branch": { ".validate": "newData.isString() && newData.val().length <= 8" },
+                  "$o": { ".validate": false }
+                }
+              },
+              "$o": { ".validate": false }
+            }
+          }
+        },
+
+        "$other": { ".validate": false }
+      },
+      "$other": { ".validate": false }
+    }
+  }
+}
