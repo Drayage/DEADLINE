@@ -164,7 +164,7 @@ console.log("\n== 온라인 락스텝 결정성 테스트 ==");
 // ---------- AI vs AI 전체 매트릭스 (양방향 평균) ----------
 console.log("\n== AI vs AI 매트릭스 (행이 열을 이기는 승률, 양방향 평균 N=각 60판) ==");
 const N = 60;
-const order = ["rush", "turtle", "economy", "timingAtk", "timingDef", "scout", "greedyTurtle"];
+const order = ["rush", "turtle", "economy", "timing", "scout", "greedyTurtle"];
 const label = (k) => E.PLAYSTYLES[k].name;
 // win[a][b] = a가 b를 이긴 비율(양방향 평균)
 const win = {};

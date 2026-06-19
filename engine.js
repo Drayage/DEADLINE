@@ -72,8 +72,8 @@
 
   // ---------- 연구 유효치 ----------
   function effAtk(state, side) { return C.UNIT_ATK + 2 * state.players[side].research.atk; }
-  function effHp(state, side) { return C.UNIT_HP + 2 * state.players[side].research.def; }
-  function scoutHpOf(state, side) { return C.SCOUT_HP + 2 * state.players[side].research.def; }
+  function effHp(state, side) { return C.UNIT_HP + 3 * state.players[side].research.def; }
+  function scoutHpOf(state, side) { return C.SCOUT_HP + 3 * state.players[side].research.def; }
   // 포탑 유효 수 / 공격력 (스택)
   function towerCount(hp) { return Math.ceil(hp / C.TOWER_HP); }
   function towerAtkOf(hp) { return towerCount(hp) * C.TOWER_ATK; }
@@ -664,30 +664,17 @@
       scoutChance: 0.1,
       researchChance: 0.3,
     },
-    timingAtk: {
-      name: "타이밍(공업)",
+    timing: {
+      name: "타이밍",
       targetWorkers: 7,
       greedUntil: 0,
       wantBaseTower: false,
-      atkSize: [5, 6],       // 버프와 결합해 포탑/주둔을 깰 수 있는 결정타 규모
+      atkSize: [3, 4],       // 작고 빠른 웨이브 — 탐욕 창(턴4~5) 안에 본진포탑 깨고 일꾼 타격
       reserve: 0,
       defends: true,
       scoutChance: 0.15,
       timedUpgrade: true,        // 진군 웨이브가 적 1칸 도달 전에 연구가 완성되도록 타이밍 업글
-      timedUpgradeBranch: "atk", // 공업: 결정타 +ATK로 포탑/주둔 격파
-      timedUpgradeCap: 3,
-    },
-    timingDef: {
-      name: "타이밍(방업)",
-      targetWorkers: 7,
-      greedUntil: 0,
-      wantBaseTower: false,
-      atkSize: [5, 6],
-      reserve: 0,
-      defends: true,
-      scoutChance: 0.15,
-      timedUpgrade: true,
-      timedUpgradeBranch: "def", // 방업: 웨이브 +HP로 포탑/주둔과의 교환에서 더 많이 생존
+      timedUpgradeBranch: "atk", // 공업: 작은 웨이브는 +ATK로 관통해야 함(방업은 floor탓 무력)
       timedUpgradeCap: 3,
     },
     greedyTurtle: {
@@ -763,23 +750,34 @@
   }
 
   // 성향은 "초반 빌드오더"만 결정한다. 중반(OPENING_TURNS)부터는 성향을 버리고 현재
-  // 판세(경제/위협/병력)를 읽어 합리적 적응형 매크로로 전환한다. → 러쉬·타이밍이 한 번
-  // 막혔다고 게임을 던지지 않고 경제 복구·분산 압박·방어로 갈아탄다.
+  // 판세를 읽어 합리적 적응형 매크로로 전환한다. 핵심 교훈(플레이 피드백):
+  //  - 상대가 일꾼을 과하게 뽑으면 나도 경제를 강하게 키워 "돈 격차"로 지지 않는다.
+  //  - 방어(본진포탑+라인포탑)는 상시 유지하고, 공격은 "결정적 우위(큰 웨이브)"에서만.
+  // → 러쉬·타이밍이 한 번 막혔다고 던지지 않고, 무한경제 상대로도 경제를 맞춰 버틴 뒤
+  //   모아서 친다.
   const OPENING_TURNS = 7;
   function midGameProfile(state, side, ps, rng) {
-    if (state.turn < OPENING_TURNS) return ps;   // 초반: 성향(빌드오더) 그대로
-    if (ps.adaptive) return ps;                  // 정찰형은 자체 적응 로직(adaptScout) 유지
-    // 이미 경제 기반(배째기/경제)인 성향은 정체성 유지 → 상성(가위바위보) 보존.
-    if (ps.targetWorkers >= 10) return ps;
-    // 저경제 공격형(러쉬·타이밍): 초반 압박이 끝났으면 경제로 복구해 게임을 던지지 않게.
-    // 정체성은 "공격형" 그대로 두되, 경제 바닥을 끌어올리고 생존(방어/본진포탑)을 켠다.
+    if (state.turn < OPENING_TURNS) return ps;   // 초반: 성향(빌드오더) 그대로(정찰형은 정찰 오프닝)
+    const p = state.players[side];
+    // 적 경제 추정: 정찰로 본 적 일꾼 수(intel) 있으면 사용. 적이 더 부유하면 더 키운다.
+    let enemyWorkers = 0, known = false;
+    const intel = state.intel[side];
+    for (let l = 0; l < C.LINES; l++) {
+      const info = intel[l];
+      if (info && info.reachedBase && info.baseInfo) { enemyWorkers = Math.max(enemyWorkers, info.baseInfo.workers); known = true; }
+    }
+    // 경제 목표: 기본 20, 적이 더 부유한 게 보이면 그 이상으로(상대 탐욕 추종). 최대 26.
+    let tw = Math.max(ps.targetWorkers, 20);
+    if (known) tw = Math.max(tw, Math.min(26, enemyWorkers + 4));
     return Object.assign({}, ps, {
-      targetWorkers: 12,
-      greedUntil: 0,
-      wantBaseTower: true,
-      defends: true,
-      spread: true,        // 복구 후엔 3라인 분산 압박
-      rampAttack: true,    // 경제 회복하면 모아서 대규모 공격
+      greedUntil: 0, adaptive: false,   // 중반엔 정찰형도 통합 매크로(초반 정찰 오프닝만 유지)
+      defends: true, wantBaseTower: true, wantLineTower: true, stackBaseTower: true,
+      opportunist: true, spread: true, reserve: 1,
+      scoutChance: Math.max(ps.scoutChance || 0, 0.12),   // 적 경제 파악용 정찰
+      researchChance: Math.max(ps.researchChance || 0, 0.2),
+      targetWorkers: tw,
+      // 공격은 큰 웨이브로만(찔끔 공격은 포탑 회복에 손해). 경제 먼저 → 모이면 결정타.
+      attackThreshold: 8, attackMax: 12,
     });
   }
 

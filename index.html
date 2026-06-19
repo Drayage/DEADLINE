@@ -79,6 +79,7 @@
   @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
   @keyframes pop{0%{transform:translate(-50%,-50%) scale(.3); opacity:0}50%{transform:translate(-50%,-50%) scale(1.4); opacity:1}100%{transform:translate(-50%,-50%) scale(1)}}
   .fogmark{font-size:20px; opacity:.4; margin:auto}
+  .deadmark{font-size:20px; color:var(--gold); margin:auto; animation:pop .4s}
   .fogtxt{font-size:10px; color:var(--muted); margin:auto}
   .scoutmk{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:3;
     background:rgba(20,26,38,.95); border:1px solid var(--gold); color:var(--gold);
@@ -156,6 +157,28 @@
     100%{opacity:0; transform:translateX(-50%) translateY(-38px) scale(1)}}
   .combat .cside.hurt{animation:hurt .42s}
   @keyframes hurt{0%,100%{transform:translateX(0)}20%{transform:translateX(-5px)}60%{transform:translateX(5px)}80%{transform:translateX(-2px)}}
+  /* 잃은 마리수(왼쪽아래) */
+  .cntfloat{position:absolute; bottom:30px; left:8px; font-size:17px; font-weight:900; color:#ffd24a;
+    text-shadow:0 2px 6px #000; pointer-events:none; z-index:5; animation:dfloat 1.1s cubic-bezier(.2,.8,.3,1) forwards}
+  /* 본진 수비 겹(일꾼/본진) 등장 강조 */
+  .combat .cside.enter{animation:layerin .45s ease-out}
+  @keyframes layerin{0%{transform:scale(.7); box-shadow:0 0 0 3px var(--gold)}100%{transform:scale(1)}}
+  /* 단계 이펙트: 떠오르는 숫자(골드 +N 등) + 펄스 + 생산 칸 반짝 */
+  .floatnum{position:fixed; transform:translate(-50%,-50%); font-size:22px; font-weight:900; z-index:60;
+    pointer-events:none; animation:floatup 1.2s ease-out forwards}
+  .floatnum.gold{color:var(--gold); text-shadow:0 2px 8px #000,0 0 12px rgba(255,204,85,.6)}
+  @keyframes floatup{0%{opacity:0; transform:translate(-50%,-10%) scale(.7)}
+    20%{opacity:1; transform:translate(-50%,-70%) scale(1.2)}100%{opacity:0; transform:translate(-50%,-180%) scale(1)}}
+  .pulse{animation:pulsejmp .55s}
+  @keyframes pulsejmp{0%{transform:scale(1)}40%{transform:scale(1.35)}100%{transform:scale(1)}}
+  .cell.producing{box-shadow:inset 0 0 0 2px var(--ok),0 0 16px rgba(74,208,106,.6)!important; animation:pop .55s}
+  .basecell.producing{box-shadow:inset 0 0 0 2px var(--ok),0 0 18px rgba(74,208,106,.6)!important; animation:pop .55s}
+  /* 가로 화면 회전 안내(휴대폰) */
+  #rotate{position:fixed; inset:0; z-index:90; background:var(--bg); display:none;
+    flex-direction:column; align-items:center; justify-content:center; gap:14px; text-align:center; padding:24px}
+  #rotate .ic{font-size:54px; animation:bob 1.2s ease-in-out infinite}
+  #rotate .tx{color:var(--muted); font-size:15px; line-height:1.6}
+  @media (orientation:landscape) and (max-width:932px){ #rotate{display:flex} }
   .combat .result{margin-top:16px; min-height:22px}
 .combat .result .verdict{font-size:19px; font-weight:900; color:var(--gold); animation:vpop .45s cubic-bezier(.2,1.4,.4,1)}
 @keyframes vpop{0%{transform:scale(.4); opacity:0}60%{transform:scale(1.18)}100%{transform:scale(1); opacity:1}}
@@ -247,9 +270,11 @@
   <span class="chip">행동 <b id="actsTag">2/2</b></span>
   <span class="chip">상대 <b id="aiStyle">???</b></span>
   <button class="ghostbtn" id="bOnline" style="margin-left:auto">🌐 온라인 대전</button>
+  <button class="ghostbtn" id="bResign" title="항복">🏳 항복</button>
   <button class="ghostbtn" id="bMute" title="소리 켜기/끄기">🔊</button>
   <button class="ghostbtn" id="bNew">⟳ 새 게임</button>
 </header>
+<div id="rotate"><div class="ic">📱↻</div><div class="tx">세로로 돌려서 플레이해줘<br>DEADLINE은 세로 화면 전용이야</div></div>
 
 <div class="wrap">
   <div class="col">
@@ -458,8 +483,8 @@
 
   // ---------- 연구 유효치 ----------
   function effAtk(state, side) { return C.UNIT_ATK + 2 * state.players[side].research.atk; }
-  function effHp(state, side) { return C.UNIT_HP + 2 * state.players[side].research.def; }
-  function scoutHpOf(state, side) { return C.SCOUT_HP + 2 * state.players[side].research.def; }
+  function effHp(state, side) { return C.UNIT_HP + 3 * state.players[side].research.def; }
+  function scoutHpOf(state, side) { return C.SCOUT_HP + 3 * state.players[side].research.def; }
   // 포탑 유효 수 / 공격력 (스택)
   function towerCount(hp) { return Math.ceil(hp / C.TOWER_HP); }
   function towerAtkOf(hp) { return towerCount(hp) * C.TOWER_ATK; }
@@ -1050,30 +1075,17 @@
       scoutChance: 0.1,
       researchChance: 0.3,
     },
-    timingAtk: {
-      name: "타이밍(공업)",
+    timing: {
+      name: "타이밍",
       targetWorkers: 7,
       greedUntil: 0,
       wantBaseTower: false,
-      atkSize: [5, 6],       // 버프와 결합해 포탑/주둔을 깰 수 있는 결정타 규모
+      atkSize: [3, 4],       // 작고 빠른 웨이브 — 탐욕 창(턴4~5) 안에 본진포탑 깨고 일꾼 타격
       reserve: 0,
       defends: true,
       scoutChance: 0.15,
       timedUpgrade: true,        // 진군 웨이브가 적 1칸 도달 전에 연구가 완성되도록 타이밍 업글
-      timedUpgradeBranch: "atk", // 공업: 결정타 +ATK로 포탑/주둔 격파
-      timedUpgradeCap: 3,
-    },
-    timingDef: {
-      name: "타이밍(방업)",
-      targetWorkers: 7,
-      greedUntil: 0,
-      wantBaseTower: false,
-      atkSize: [5, 6],
-      reserve: 0,
-      defends: true,
-      scoutChance: 0.15,
-      timedUpgrade: true,
-      timedUpgradeBranch: "def", // 방업: 웨이브 +HP로 포탑/주둔과의 교환에서 더 많이 생존
+      timedUpgradeBranch: "atk", // 공업: 작은 웨이브는 +ATK로 관통해야 함(방업은 floor탓 무력)
       timedUpgradeCap: 3,
     },
     greedyTurtle: {
@@ -1149,23 +1161,34 @@
   }
 
   // 성향은 "초반 빌드오더"만 결정한다. 중반(OPENING_TURNS)부터는 성향을 버리고 현재
-  // 판세(경제/위협/병력)를 읽어 합리적 적응형 매크로로 전환한다. → 러쉬·타이밍이 한 번
-  // 막혔다고 게임을 던지지 않고 경제 복구·분산 압박·방어로 갈아탄다.
+  // 판세를 읽어 합리적 적응형 매크로로 전환한다. 핵심 교훈(플레이 피드백):
+  //  - 상대가 일꾼을 과하게 뽑으면 나도 경제를 강하게 키워 "돈 격차"로 지지 않는다.
+  //  - 방어(본진포탑+라인포탑)는 상시 유지하고, 공격은 "결정적 우위(큰 웨이브)"에서만.
+  // → 러쉬·타이밍이 한 번 막혔다고 던지지 않고, 무한경제 상대로도 경제를 맞춰 버틴 뒤
+  //   모아서 친다.
   const OPENING_TURNS = 7;
   function midGameProfile(state, side, ps, rng) {
-    if (state.turn < OPENING_TURNS) return ps;   // 초반: 성향(빌드오더) 그대로
-    if (ps.adaptive) return ps;                  // 정찰형은 자체 적응 로직(adaptScout) 유지
-    // 이미 경제 기반(배째기/경제)인 성향은 정체성 유지 → 상성(가위바위보) 보존.
-    if (ps.targetWorkers >= 10) return ps;
-    // 저경제 공격형(러쉬·타이밍): 초반 압박이 끝났으면 경제로 복구해 게임을 던지지 않게.
-    // 정체성은 "공격형" 그대로 두되, 경제 바닥을 끌어올리고 생존(방어/본진포탑)을 켠다.
+    if (state.turn < OPENING_TURNS) return ps;   // 초반: 성향(빌드오더) 그대로(정찰형은 정찰 오프닝)
+    const p = state.players[side];
+    // 적 경제 추정: 정찰로 본 적 일꾼 수(intel) 있으면 사용. 적이 더 부유하면 더 키운다.
+    let enemyWorkers = 0, known = false;
+    const intel = state.intel[side];
+    for (let l = 0; l < C.LINES; l++) {
+      const info = intel[l];
+      if (info && info.reachedBase && info.baseInfo) { enemyWorkers = Math.max(enemyWorkers, info.baseInfo.workers); known = true; }
+    }
+    // 경제 목표: 기본 20, 적이 더 부유한 게 보이면 그 이상으로(상대 탐욕 추종). 최대 26.
+    let tw = Math.max(ps.targetWorkers, 20);
+    if (known) tw = Math.max(tw, Math.min(26, enemyWorkers + 4));
     return Object.assign({}, ps, {
-      targetWorkers: 12,
-      greedUntil: 0,
-      wantBaseTower: true,
-      defends: true,
-      spread: true,        // 복구 후엔 3라인 분산 압박
-      rampAttack: true,    // 경제 회복하면 모아서 대규모 공격
+      greedUntil: 0, adaptive: false,   // 중반엔 정찰형도 통합 매크로(초반 정찰 오프닝만 유지)
+      defends: true, wantBaseTower: true, wantLineTower: true, stackBaseTower: true,
+      opportunist: true, spread: true, reserve: 1,
+      scoutChance: Math.max(ps.scoutChance || 0, 0.12),   // 적 경제 파악용 정찰
+      researchChance: Math.max(ps.researchChance || 0, 0.2),
+      targetWorkers: tw,
+      // 공격은 큰 웨이브로만(찔끔 공격은 포탑 회복에 손해). 경제 먼저 → 모이면 결정타.
+      attackThreshold: 8, attackMax: 12,
     });
   }
 
@@ -1652,6 +1675,9 @@ const Sfx = (() => {
     kill:  () => { tone(620, 0.1, "square", 0.17); tone(940, 0.16, "square", 0.15, 0.08); },
     down:  () => { tone(300, 0.2, "sawtooth", 0.17, 0, 150); },
     trade: () => { noise(0.16, 0.2, 500); tone(220, 0.2, "triangle", 0.13, 0, 150); },
+    income:  () => { tone(880, 0.08, "square", 0.12); tone(1320, 0.11, "square", 0.10, 0.06); }, // 동전
+    produce: () => { tone(440, 0.07, "triangle", 0.13); tone(660, 0.1, "triangle", 0.11, 0.05); },
+    scoutDie:() => { noise(0.16, 0.22, 1400); tone(700, 0.2, "sawtooth", 0.15, 0, 180); },     // 정찰병 격추
   };
   const api = {};
   for (const k in sfx) api[k] = () => { if (on) { ensure(); resume(); sfx[k](); } };
@@ -1719,6 +1745,7 @@ function newGame() {
   const styles = Object.keys(E.PLAYSTYLES);
   aiStyle = styles[Math.floor(Math.random() * styles.length)];
   pending = []; gameOver = false; peekBase = false; waitingOpp = false;
+  scoutPeekBase = false; scoutDeadMarks = [];
   document.getElementById("bannerSlot").innerHTML = "";
   turnSnapshot = JSON.stringify(state);
   logRaw(`새 게임 — 상대 성향은 비공개. 행운을 빈다.`);
@@ -1732,6 +1759,7 @@ function startOnlineGame(side) {
   state = E.createState();
   aiStyle = null;
   pending = []; gameOver = false; peekBase = false; waitingOpp = false;
+  scoutPeekBase = false; scoutDeadMarks = [];
   document.getElementById("bannerSlot").innerHTML = "";
   closeLobby();
   turnSnapshot = JSON.stringify(state);
@@ -1763,6 +1791,8 @@ function undo() {
 
 let animating = false;
 let peekBase = false; // 본진 침투 순간 적 본진 정보 잠깐 공개용
+let scoutPeekBase = false;   // 정찰 본진 도달 시 턴종료 전까지 적 본진 공개
+let scoutDeadMarks = [];     // 정찰병이 죽은 칸들(턴종료 전까지 ? 표시) [{line,slot}]
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // 수량칸 기본값을 현재 골드/주둔 기준 최대치로(상/중/하 안 눌러도 최대로 시작)
 function autofillAll(){
@@ -1774,6 +1804,7 @@ function autofillAll(){
 
 async function endTurn() {
   if (gameOver || animating || waitingOpp) return;
+  scoutPeekBase = false; scoutDeadMarks = [];   // 새 턴 시작 → 지난 정찰 표식 정리
   if (mode === "online") return onlineEndTurn();
   // ---- vs AI ----
   // AI 행동 결정(비공개) — 내 행동은 이미 doAction으로 state에 적용됨
@@ -1841,6 +1872,17 @@ async function runResolution() {
       st.apply();
       render();
       await animateScouts();
+    } else if (st.name === "수입") {
+      const before = state.players[SIDE].gold;
+      st.apply(); render();
+      const gained = state.players[SIDE].gold - before;
+      if (gained > 0) { floatOn("myGold", "+" + gained, "gold"); pulse("myGold"); Sfx.income(); }
+      await sleep(600);
+    } else if (st.name === "생산") {
+      const hadProd = myQueueHasProduction();
+      st.apply(); render();
+      if (hadProd) { popSpawned(); Sfx.produce(); }
+      await sleep(650);
     } else {
       st.apply();
       render();
@@ -1903,10 +1945,11 @@ function combatConsequences(p, meA, foeA) {
   return out;
 }
 
-function effHpUI(owner){ return C.UNIT_HP + 2 * state.players[owner].research.def; }
+function effHpUI(owner){ return C.UNIT_HP + 3 * state.players[owner].research.def; }
 function effAtkUI(owner){ return C.UNIT_ATK + 2 * state.players[owner].research.atk; }
 
-// 한 칸에서 owner 측 전투 주체(유닛/포탑/본진포탑) 묘사 — 현재 state 기준.
+// 한 칸에서 owner 측 전투 주체(유닛/포탑/본진포탑/일꾼/본진) 묘사 — 현재 state 기준.
+// 본진 칸 수비측은 본진포탑 → (없으면) 일꾼 → (없으면) 본진 순으로 "지금 막는 대상"을 보여준다.
 function describeSide(line, slot, owner) {
   const cell = state.lines[line][slot];
   const nm = owner === SIDE ? "나" : "적";
@@ -1921,9 +1964,13 @@ function describeSide(line, slot, owner) {
   }
   if (slot === 0 || slot === 4) {
     const defender = slot === 0 ? 0 : 1;
-    if (owner === defender && state.players[owner].baseTower) {
-      const bt = state.players[owner].baseTower; const c = Math.ceil(bt.hp / C.TOWER_HP);
-      return { icon: "🏯", name: nm + " 본진포탑", count: c, atk: c * C.TOWER_ATK, hp: bt.hp, maxHp: c * C.TOWER_HP };
+    if (owner === defender) {
+      const dp = state.players[owner];
+      if (dp.baseTower) { const bt = dp.baseTower; const c = Math.ceil(bt.hp / C.TOWER_HP);
+        return { icon: "🏯", name: nm + " 본진포탑", count: c, atk: c * C.TOWER_ATK, hp: bt.hp, maxHp: c * C.TOWER_HP }; }
+      if (dp.workers > 0) // 일꾼이 본진을 몸으로 막음(피격 시 수치 보이게)
+        return { icon: "⛏️", name: nm + " 일꾼", count: dp.workers, atk: 0, hp: dp.workers, maxHp: dp.workers, isWorkers: true };
+      return { icon: "🏰", name: nm + " 본진", count: 1, atk: 0, hp: Math.max(0, dp.baseHp), maxHp: C.BASE_HP, isBase: true };
     }
   }
   return null;
@@ -1933,12 +1980,88 @@ function describeSide(line, slot, owner) {
 async function playCombat(pre) {
   if (!pre.length) { await sleep(250); return; }
   for (const p of pre) {
-    if (!p.meB && !p.foeB) continue;
     flashCell(p.line, p.slot);
+    if (p.snap) { await showBaseCombat(p); continue; }   // 본진칸 = 순차 연출(포탑→일꾼→본진)
+    if (!p.meB && !p.foeB) continue;
     const meA = describeSide(p.line, p.slot, SIDE);
     const foeA = describeSide(p.line, p.slot, OPP);
     await showCombat(p, meA, foeA);
   }
+}
+
+// 본진 침투 순차 연출: 공격자 고정, 수비를 본진포탑 → 일꾼 → 본진 순서로 한 겹씩 깎는다.
+// (엔진은 resolveBase로 이미 한번에 해결됨 → snap[전]과 현재[후]로 각 겹을 재구성해 보여줌)
+async function showBaseCombat(p) {
+  const def = p.snap.def, atkSide = E.enemyOf(def);
+  const defEl = def === SIDE ? "cMe" : "cFoe";
+  const atkEl = def === SIDE ? "cFoe" : "cMe";
+  const dnm = def === SIDE ? "내" : "적";
+  const dp = state.players[def];
+  // 공격자: pre(접촉 시작) 표시 → 마지막에 post로
+  const atkPre = atkSide === SIDE ? p.meB : p.foeB;
+  const atkPost = describeSide(p.line, p.slot, atkSide);
+  // 수비 겹 구성(피해 있은 것만)
+  const layers = [];
+  if (p.snap.baseTowerHp > 0) {
+    const c = Math.ceil(p.snap.baseTowerHp / C.TOWER_HP);
+    const afterHp = dp.baseTower ? dp.baseTower.hp : 0;
+    layers.push({
+      before: { icon: "🏯", name: dnm + " 본진포탑", count: c, atk: c * C.TOWER_ATK, hp: p.snap.baseTowerHp, maxHp: c * C.TOWER_HP },
+      after: afterHp > 0 ? { icon: "🏯", name: dnm + " 본진포탑", count: Math.ceil(afterHp / C.TOWER_HP), atk: 0, hp: afterHp, maxHp: c * C.TOWER_HP } : null,
+    });
+  }
+  const lostW = p.snap.workers - dp.workers;
+  if (p.snap.workers > 0 && lostW > 0) {
+    layers.push({
+      before: { icon: "⛏️", name: dnm + " 일꾼", count: p.snap.workers, atk: 0, hp: p.snap.workers, maxHp: p.snap.workers },
+      after: { icon: "⛏️", name: dnm + " 일꾼", count: dp.workers, atk: 0, hp: dp.workers, maxHp: p.snap.workers },
+      lost: lostW,
+    });
+  }
+  const baseDmg = p.snap.baseHp - dp.baseHp;
+  if (baseDmg > 0) {
+    layers.push({
+      before: { icon: "🏰", name: dnm + " 본진", count: 1, atk: 0, hp: p.snap.baseHp, maxHp: C.BASE_HP },
+      after: { icon: "🏰", name: dnm + " 본진", count: 1, atk: 0, hp: dp.baseHp, maxHp: C.BASE_HP },
+    });
+  }
+  if (!layers.length) return;   // 포탑이 다 막아 피해 0 → 일반 카드로 충분(여기선 생략)
+
+  const ov = document.getElementById("combat");
+  document.getElementById("combatWhere").textContent = p.where + " · 본진 방어";
+  document.getElementById(atkEl).innerHTML = sideHtml(atkEl === "cMe" ? "me" : "foe", atkPre || atkPost);
+  document.getElementById("combatResult").innerHTML = "";
+  ov.className = "combat show";
+  Sfx.clash();
+  await sleep(700);
+  for (let i = 0; i < layers.length; i++) {
+    const L = layers[i];
+    document.getElementById(defEl).innerHTML = sideHtml(defEl === "cMe" ? "me" : "foe", L.before);
+    // 겹 등장 강조
+    const card = document.getElementById(defEl); card.classList.remove("enter"); void card.offsetWidth; card.classList.add("enter");
+    await sleep(i === 0 ? 450 : 700);   // 새 수비 겹(일꾼/본진) 등장 후 한 박자
+    Sfx.hit();
+    floatDmg(defEl, L.before.hp - (L.after ? L.after.hp : 0));
+    if (L.lost) floatCount(defEl, L.lost);
+    await tweenSide(defEl, L.before, L.after);
+    if (!L.after) {  // 이 겹 파괴
+      Sfx.kill();
+      document.getElementById("combatResult").innerHTML = `<div class="verdict">${L.before.name} 파괴!</div>`;
+      await sleep(700);
+      document.getElementById("combatResult").innerHTML = "";
+    } else {
+      await sleep(500);
+    }
+  }
+  applyAfter(atkEl, atkPost);   // 공격자 최종 상태
+  const meA = describeSide(p.line, p.slot, SIDE), foeA = describeSide(p.line, p.slot, OPP);
+  const cons = combatConsequences(p, meA, foeA);
+  document.getElementById("combatResult").innerHTML =
+    `<div class="verdict">${combatVerdict(meA, foeA)}</div>` +
+    (cons.length ? `<ul class="conseq">${cons.map(c => `<li>${c}</li>`).join("")}</ul>` : "");
+  await sleep(1500);
+  ov.className = "combat";
+  await sleep(260);
 }
 
 function showPhase(name) {
@@ -1982,7 +2105,7 @@ function applyAfter(elId, d) {
   if (cnt) cnt.textContent = d.count;
 }
 
-// 떠오르는 데미지 숫자
+// 떠오르는 데미지 숫자(HP, 카드 상단 중앙)
 function floatDmg(elId, amount) {
   if (amount <= 0) return;
   const el = document.getElementById(elId);
@@ -1990,6 +2113,45 @@ function floatDmg(elId, amount) {
   const d = document.createElement("div");
   d.className = "dmgfloat"; d.textContent = "-" + Math.round(amount);
   el.appendChild(d); setTimeout(() => d.remove(), 1200);
+}
+// 잃은 마리수(×수량 옆, 카드 왼쪽아래)
+function floatCount(elId, n) {
+  if (n <= 0) return;
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const d = document.createElement("div");
+  d.className = "cntfloat"; d.textContent = "-" + n + "기";
+  el.appendChild(d); setTimeout(() => d.remove(), 1200);
+}
+// 임의 요소 위로 숫자 띄우기(단계 이펙트용 — 골드 +N 등)
+function floatOn(id, text, cls) {
+  const el = document.getElementById(id); if (!el) return;
+  const r = el.getBoundingClientRect();
+  const d = document.createElement("div");
+  d.className = "floatnum " + (cls || "");
+  d.textContent = text;
+  d.style.left = (r.left + r.width / 2) + "px";
+  d.style.top = r.top + "px";
+  document.body.appendChild(d);
+  setTimeout(() => d.remove(), 1200);
+}
+function pulse(id) {
+  const el = document.getElementById(id); if (!el) return;
+  el.classList.remove("pulse"); void el.offsetWidth; el.classList.add("pulse");
+  setTimeout(() => el.classList.remove("pulse"), 600);
+}
+// 생산 단계: 내 생산 도착 칸(내 1칸들 + 본진) 반짝
+function popSpawned() {
+  for (let l = 0; l < C.LINES; l++) flashProduce(cellKey(l, mySpawn()));
+  flashProduce("basemine");
+}
+function flashProduce(key) {
+  const cell = document.querySelector(`[data-cell="${key}"]`); if (!cell) return;
+  cell.classList.add("producing"); setTimeout(() => cell.classList.remove("producing"), 750);
+}
+function myQueueHasProduction() {
+  const q = state.queues[SIDE];
+  return q.workers > 0 || q.units.length > 0 || q.towers.length > 0 || q.baseTower > 0;
 }
 // 한쪽 HP/수량을 before→after 로 부드럽게 카운트다운(수치 변화가 잘 보이게)
 function tweenSide(elId, from, to) {
@@ -2029,9 +2191,12 @@ async function showCombat(p, meA, foeA) {
   const dmgFoe = Math.max(0, (p.foeB ? p.foeB.hp : 0) - (foeA ? foeA.hp : 0));
   Sfx.hit();
   floatDmg("cMe", dmgMe); floatDmg("cFoe", dmgFoe);
+  // 잃은 마리수도 함께(직관적)
+  floatCount("cMe", (p.meB ? p.meB.count : 0) - (meA ? meA.count : 0));
+  floatCount("cFoe", (p.foeB ? p.foeB.count : 0) - (foeA ? foeA.count : 0));
   // 게이지가 끝까지 내려갈 때까지 기다린다
   await Promise.all([tweenSide("cMe", p.meB, meA), tweenSide("cFoe", p.foeB, foeA)]);
-  await sleep(450);   // 다 내려간 뒤 한 박자 — 결과로 넘어가기 전 여운
+  await sleep(650);   // 다 내려간 뒤 한 박자 — 결과로 넘어가기 전 여운
   // 결과(승패 + 후속효과) + 결과 효과음
   const verdict = combatVerdict(meA, foeA);
   resultSfx(meA, foeA);
@@ -2070,8 +2235,10 @@ async function animateScouts() {
         cell.appendChild(mk);
         setTimeout(() => mk.remove(), 760);
       }
+      if (mine && ev.result === "die") { Sfx.scoutDie(); scoutDeadMarks.push({ line: sc.line, slot: ev.slot }); }
       await sleep(mine ? 560 : 430);
     }
+    if (mine && sc.reachedBase) scoutPeekBase = true;   // 턴종료 전까지 적 본진 공개
     if (mine) {
       if (sc.reachedBase) toast(`${LINE_NAMES[sc.line]} 적 본진 도달 — 정보 확보${sc.workerDied ? " (정찰병 전사)" : " (무사 귀환)"}`);
       else if (sc.workerDied) toast(`${LINE_NAMES[sc.line]} 정찰병 사망`, true);
@@ -2093,6 +2260,19 @@ function combatVerdict(meA, foeA) {
   if (foeGone) return "적 격파!";
   if (meGone) return "내 병력 전멸…";
   return "교전 지속";
+}
+
+// 화면 세로 고정 시도(설치형 PWA/지원 브라우저에서만 동작 — 안 되면 CSS #rotate 안내가 폴백)
+function tryLockPortrait() {
+  try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock("portrait").catch(() => {}); } catch (e) {}
+}
+
+// 항복: 즉시 패배(온라인은 endGame이 net.leave → 상대는 부전승 처리됨)
+function resign() {
+  if (gameOver || animating || waitingOpp) return;
+  if (!confirm("정말 항복할까? 즉시 패배 처리돼.")) return;
+  state.winner = OPP;
+  endGame();
 }
 
 function endGame() {
@@ -2157,7 +2337,7 @@ function canSee(line, slot) {
 }
 // 적 본진 시야: 내 유닛이 현재 적 본진 칸에 있을 때만(정찰 정보는 보드에 계속 노출 X → 패널 스냅샷).
 function enemyBaseVisible() {
-  if (peekBase) return true; // 침투 순간 잠깐 공개
+  if (peekBase || scoutPeekBase) return true; // 침투 순간 / 정찰 도달 후 턴종료 전까지
   for (let l = 0; l < C.LINES; l++) { const a = state.lines[l][enemyBase()].armies[SIDE]; if (a && a.count) return true; }
   return false;
 }
@@ -2244,7 +2424,8 @@ function renderField() {
         if (enArmy && enArmy.count) right += stackHtml(OPP, enArmy);
       }
       let inner = `<span class="pos">${slotName(s)}</span><div class="zoneL">${left}</div>`;
-      if (!visible) inner += `<div class="fogmark">🌫️</div>`;
+      if (scoutDeadMarks.some(m => m.line === l && m.slot === s)) inner += `<div class="deadmark" title="정찰병 사망 지점">❓</div>`;
+      else if (!visible) inner += `<div class="fogmark">🌫️</div>`;
       inner += `<div class="zoneR">${right}</div>`;
       html += `<div class="${cls}" style="grid-row:${row}; grid-column:${3 + di}" data-cell="${l}-${s}">${inner}</div>`;
     }
@@ -2498,11 +2679,11 @@ function bind(){
   on("bAttack", () => { const l=lineVal("attackLine"); const c=+v("attackCount")||1;
     doAction({type:"attack",line:l,count:c}, `공격 ${c}기(${L(l)})`); });
   ["unitCount","towerCount","baseTowerCount"].forEach(id=>{ document.getElementById(id).onchange = renderControls; });
-  on("bEnd", endTurn); on("bUndo", undo); on("bNew", newGame);
-  // 사운드 토글 + 첫 사용자 제스처에 오디오 시작(브라우저 자동재생 정책)
+  on("bEnd", endTurn); on("bUndo", undo); on("bNew", newGame); on("bResign", resign);
+  // 사운드 토글 + 첫 사용자 제스처에 오디오 시작(브라우저 자동재생 정책) + 세로 고정 시도
   setText("bMute", Sfx.isOn() ? "🔊" : "🔇");
   on("bMute", () => setText("bMute", Sfx.toggle() ? "🔊" : "🔇"));
-  const kick = () => { Sfx.kick(); window.removeEventListener("pointerdown", kick); window.removeEventListener("keydown", kick); };
+  const kick = () => { Sfx.kick(); tryLockPortrait(); window.removeEventListener("pointerdown", kick); window.removeEventListener("keydown", kick); };
   window.addEventListener("pointerdown", kick); window.addEventListener("keydown", kick);
   // 온라인 로비
   on("bOnline", openLobby);
