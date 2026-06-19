@@ -675,6 +675,7 @@
       reserve: 3,
       defends: true,
       wantLineTower: true,
+      saveForBaseTower: true,   // 본진포탑 세우기 전엔 방어유닛 대신 100 모아 포탑부터
       reinforceWhenHit: true,   // 본진포탑이 피격되면 돈 모아 본진포탑 1개 추가
       scoutChance: 0,           // 무정찰
     },
@@ -760,9 +761,20 @@
     // 탐욕 구간: 일꾼이 greedUntil 미만이고 긴급 위협(본진 인접)이 아니면 일꾼만 생산.
     // → 초반 무방비(탐욕)를 만들어 러쉬·타이밍이 처벌할 창을 연다.
     const futureWorkersG = p.workers + state.queues[side].workers;
-    if ((ps.greedUntil || 0) > 0 && futureWorkersG < ps.greedUntil && urgent === 0) {
+    // saveForBaseTower 성향은 위협이 보이면 탐욕을 멈추고 포탑부터(아래) 챙긴다.
+    // (일반 탐욕형은 기존대로 본진 인접 긴급 위협이 아니면 계속 탐욕)
+    const greedClear = ps.saveForBaseTower ? totalThreat === 0 : urgent === 0;
+    if ((ps.greedUntil || 0) > 0 && futureWorkersG < ps.greedUntil && greedClear) {
       if (p.gold >= C.COST_WORKER) return { type: "worker" };
       return null; // 골드 모자라면 행동 보류(저축)
+    }
+
+    // 0.-) 포탑 우선 저축: 본진포탑이 아직 없으면(컨셉상 반드시 세워야 함) 방어유닛 등에
+    //      돈을 쓰지 말고 100을 모아 본진포탑부터 올린다. 모이면 즉시 건설.
+    if (ps.saveForBaseTower && ps.wantBaseTower && !p.baseTower &&
+        !state.queues[side].baseTower) {
+      if (p.gold >= C.COST_BASE_TOWER) return { type: "baseTower", _defense: urgent > 0 };
+      return null; // 포탑 자금 모으는 중 — 다른 지출 보류
     }
 
     // 0) 방어: 위협받는 라인에 방어 유닛 부족 시 보강(길목에서 자동 요격).
