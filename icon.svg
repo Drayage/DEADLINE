@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#16203a"/>
+      <stop offset="1" stop-color="#0b0e14"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4aa3ff"/>
+      <stop offset="0.5" stop-color="#b07cff"/>
+      <stop offset="1" stop-color="#ff5b52"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <!-- 3개 라인 -->
+  <g stroke="#222b3a" stroke-width="10">
+    <line x1="96" y1="180" x2="416" y2="180"/>
+    <line x1="96" y1="256" x2="416" y2="256"/>
+    <line x1="96" y1="332" x2="416" y2="332"/>
+  </g>
+  <!-- 양측 본진 -->
+  <rect x="78" y="150" width="40" height="212" rx="12" fill="#1d4e80"/>
+  <rect x="394" y="150" width="40" height="212" rx="12" fill="#7d241f"/>
+  <!-- DL 모노그램 -->
+  <text x="256" y="300" font-family="ui-monospace,Menlo,Consolas,monospace" font-size="150" font-weight="900"
+        text-anchor="middle" fill="url(#ink)">DL</text>
+</svg>

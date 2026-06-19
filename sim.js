@@ -126,6 +126,41 @@ console.log("== 전투 밸런스 단위 테스트 ==");
   assert(s.players[1].workers === w0 - 1, "돌파: 같은 턴 본진 일꾼 타격");
 }
 
+// ---------- 온라인 락스텝 결정성 테스트 ----------
+// 두 측 행동을 (A) side0 먼저 / (B) side1 먼저 적용해도 resolveTurn 결과가 동일해야
+// 클라이언트-권위 락스텝이 성립한다(각 측 applyAction이 서로 독립).
+console.log("\n== 온라인 락스텝 결정성 테스트 ==");
+{
+  const a0 = [
+    { type: "worker" },
+    { type: "unit", line: 0, count: 3 },
+    { type: "tower", line: 1, count: 1 },
+  ];
+  const a1 = [
+    { type: "unit", line: 2, count: 2 },
+    { type: "research", branch: "atk" },
+    { type: "baseTower", count: 1 },
+  ];
+  function build(order) {
+    const s = E.createState();
+    s.players[0].gold = 1000; s.players[1].gold = 1000;
+    // 공격 명령이 의미있도록 주둔 병력 동일 배치
+    s.lines[0][1].armies[0] = { hp: 20, count: 2, marching: 0 };
+    s.lines[0][3].armies[1] = { hp: 20, count: 2, marching: 0 };
+    const acts = order === 0
+      ? [[0, a0], [1, a1], [0, [{ type: "attack", line: 0, count: 2 }]], [1, [{ type: "attack", line: 0, count: 2 }]]]
+      : [[1, a1], [0, a0], [1, [{ type: "attack", line: 0, count: 2 }]], [0, [{ type: "attack", line: 0, count: 2 }]]];
+    for (const [side, list] of acts) for (const act of list) E.applyAction(s, side, act);
+    E.resolveTurn(s);
+    return s;
+  }
+  const sA = build(0), sB = build(1);
+  // log는 적용 순서에 따라 줄 순서만 다를 수 있어 비교에서 제외(게임 상태 아님)
+  sA.log = []; sB.log = [];
+  assert(JSON.stringify(sA) === JSON.stringify(sB),
+    "양측 행동 적용 순서 무관: resolveTurn 결과 동일(락스텝 성립)");
+}
+
 // ---------- AI vs AI 전체 매트릭스 (양방향 평균) ----------
 console.log("\n== AI vs AI 매트릭스 (행이 열을 이기는 승률, 양방향 평균 N=각 60판) ==");
 const N = 60;

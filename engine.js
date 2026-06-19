@@ -1151,7 +1151,7 @@
     aiChooseAction,
     playGame,
     simulate,
-    // 방향 헬퍼(테스트용)
-    spawnSlot, enemyBaseSlot, dir,
+    // 방향 헬퍼(테스트/UI용)
+    spawnSlot, enemyBaseSlot, ownBaseSlot, enemyOf, dir,
   };
 });

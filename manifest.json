@@ -1,0 +1,16 @@
+{
+  "name": "DEADLINE — 라인 전략 RTS",
+  "short_name": "DEADLINE",
+  "description": "턴제 라인 전략 RTS. AI 대전 + 방 코드 온라인 대전.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0e14",
+  "theme_color": "#0b0e14",
+  "lang": "ko",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

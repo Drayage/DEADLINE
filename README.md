@@ -6,10 +6,42 @@
 
 ## 실행
 
-- **게임 플레이**: 브라우저로 `index.html` 열기 (별도 설치 없음, **엔진이 인라인된 자체완결
-  단일 파일** — 다른 파일 없이도 동작).
-- **밸런스 테스트(콘솔)**: `node sim.js` — 전투 단위 테스트 + AI vs AI 매치업 승률.
+- **게임 플레이(vs AI)**: 브라우저로 `index.html` 열기 (별도 설치 없음, **엔진이 인라인된
+  자체완결 단일 파일** — 다른 파일 없이도 동작).
+- **온라인 대전(방 코드)**: 아래 "온라인 대전" 참고. 정적 호스팅(GitHub Pages)만으로 동작.
+- **밸런스 테스트(콘솔)**: `node sim.js` — 전투 단위 테스트 + 락스텝 결정성 테스트 + AI vs AI
+  매치업 승률.
 - 게임 화면 우측 "밸런스 테스트" 패널에서도 매치업/전체표 실행 가능.
+
+## 온라인 대전 (방 코드)
+
+내 서버 없이 **Firebase Realtime Database를 "우편함(중계)"** 으로만 쓰는
+**클라이언트-권위 락스텝(lockstep)** 방식. 두 클라가 같은 결정적 엔진을 돌리고, 매 턴
+**자기 행동 목록만** 교환해 양측이 동일하게 해결한다(→ 동일 상태). GitHub Pages 같은 정적
+호스팅으로 충분.
+
+- 플레이: 헤더 **🌐 온라인 대전** → **방 만들기**(코드 공유) 또는 **참가**(코드 입력).
+  양쪽이 입장하면 시작. 각자 본진이 항상 왼쪽으로 보인다.
+- 한계: 릴레이라 각 클라가 전체 상태를 가짐 → **친구 간 캐주얼 대전용**(완전한 치팅 방지는
+  권위 서버가 필요).
+
+### 설정 (1회)
+
+1. [Firebase 콘솔](https://console.firebase.google.com)에서 프로젝트 생성 → **Realtime
+   Database** 활성화.
+2. **규칙**을 방 단위 읽기/쓰기로 설정:
+   ```json
+   { "rules": { "rooms": { "$code": { ".read": true, ".write": true } } } }
+   ```
+3. 웹 앱 등록 후 발급되는 config를 `index.template.html`의 `FIREBASE_CONFIG`에 넣고
+   `node build.js`로 재빌드. (웹 apiKey는 공개돼도 정상 — 보안은 위 DB 규칙으로.)
+4. GitHub Pages 활성화(레포 Settings → Pages → 루트). 푸시하면 배포된다.
+
+## PWA (설치 / 오프라인 싱글플레이)
+
+`manifest.json` + `sw.js`(서비스워커)로 **설치 가능**하며, 앱 셸을 캐시해 **싱글플레이는
+오프라인**에서도 동작한다(온라인 대전은 네트워크 필요). `index.html`을 갱신하면 `sw.js`의
+`CACHE` 버전을 올린다.
 
 ## 파일
 
@@ -19,9 +51,10 @@
   엔진이 주입된다.
 - `index.html` — **생성물**. `node build.js`가 템플릿 + 엔진을 합쳐 만든 자체완결 단일 파일.
 - `build.js` — `engine.js`를 `index.template.html`에 인라인해 `index.html` 생성.
-- `sim.js` — Node용 밸런스 테스트 러너.
+- `sim.js` — Node용 밸런스 테스트 + 락스텝 결정성 테스트 러너.
+- `manifest.json` · `sw.js` · `icon.svg` · `icon-maskable.svg` — PWA(설치/오프라인) 자산.
 
-> 엔진을 고치면 `node build.js`로 `index.html`을 다시 생성한다.
+> 엔진이나 템플릿을 고치면 `node build.js`로 `index.html`을 다시 생성한다.
 
 ## 규칙 요약
 
