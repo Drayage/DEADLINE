@@ -2017,6 +2017,7 @@ async function showBaseCombat(p) {
     const c = Math.ceil(p.snap.baseTowerHp / C.TOWER_HP);
     const afterHp = dp.baseTower ? dp.baseTower.hp : 0;
     layers.push({
+      isTower: true,   // 포탑은 반격함 → 공격자도 같이 피해
       before: { icon: "🏯", name: dnm + " 본진포탑", count: c, atk: c * C.TOWER_ATK, hp: p.snap.baseTowerHp, maxHp: c * C.TOWER_HP },
       after: afterHp > 0 ? { icon: "🏯", name: dnm + " 본진포탑", count: Math.ceil(afterHp / C.TOWER_HP), atk: 0, hp: afterHp, maxHp: c * C.TOWER_HP } : null,
     });
@@ -2054,7 +2055,14 @@ async function showBaseCombat(p) {
     Sfx.hit();
     floatDmg(defEl, L.before.hp - (L.after ? L.after.hp : 0));
     if (L.lost) floatCount(defEl, L.lost);
-    await tweenSide(defEl, L.before, L.after);
+    if (L.isTower) {
+      // 포탑은 반격함 → 공격자도 동시에 피해/마리수(일꾼·본진 겹은 ATK 0이라 반격 없음)
+      floatDmg(atkEl, (atkPre ? atkPre.hp : 0) - (atkPost ? atkPost.hp : 0));
+      floatCount(atkEl, (atkPre ? atkPre.count : 0) - (atkPost ? atkPost.count : 0));
+      await Promise.all([tweenSide(defEl, L.before, L.after), tweenSide(atkEl, atkPre, atkPost)]);
+    } else {
+      await tweenSide(defEl, L.before, L.after);
+    }
     if (!L.after) {  // 이 겹 파괴
       Sfx.kill();
       document.getElementById("combatResult").innerHTML = `<div class="verdict">${L.before.name} 파괴!</div>`;
@@ -2064,7 +2072,7 @@ async function showBaseCombat(p) {
       await sleep(500);
     }
   }
-  applyAfter(atkEl, atkPost);   // 공격자 최종 상태
+  // 공격자는 포탑 겹 tween에서 이미 "맞은 상태"로 표시됨(풀피 리셋 안 함).
   const meA = describeSide(p.line, p.slot, SIDE), foeA = describeSide(p.line, p.slot, OPP);
   const cons = combatConsequences(p, meA, foeA);
   document.getElementById("combatResult").innerHTML =
@@ -2179,7 +2187,17 @@ function tweenSide(elId, from, to) {
       if (lab) lab.textContent = `HP ${Math.max(0, Math.round(hp))}/${maxHp}`;
       if (cnt) cnt.textContent = Math.round(fromCnt + (toCnt - fromCnt) * e);
       if (k < 1) requestAnimationFrame(frame);
-      else { applyAfter(elId, to); res(); }
+      else {
+        // 풀피로 리셋하지 않고 "맞은 상태"로 고정(전투 전 max 기준 비율 유지). 다음 전투는
+        // 새 카드라 어차피 풀피로 시작한다.
+        if (!to) { el.innerHTML = sideHtml(elId === "cMe" ? "me" : "foe", null); }
+        else {
+          if (i) i.style.width = Math.max(0, Math.min(100, toHp / maxHp * 100)) + "%";
+          if (lab) lab.textContent = `HP ${Math.max(0, Math.round(toHp))}/${maxHp}`;
+          if (cnt) cnt.textContent = toCnt;
+        }
+        res();
+      }
     }
     requestAnimationFrame(frame);
   });
