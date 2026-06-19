@@ -640,6 +640,7 @@
       defends: true,
       wantLineTower: true,
       stackBaseTower: true,
+      rampAttack: true,      // 경제 완성 후엔 모은 병력을 크게 내보내 교착을 깬다
       scoutChance: 0.1,
     },
     economy: {
@@ -692,6 +693,7 @@
       wantLineTower: true,
       saveForBaseTower: true,   // 본진포탑 세우기 전엔 방어유닛 대신 100 모아 포탑부터
       reinforceWhenHit: true,   // 본진포탑이 피격되면 돈 모아 본진포탑 1개 추가
+      rampAttack: true,         // 경제 완성 후 대규모 공격으로 교착 타개
       scoutChance: 0,           // 무정찰
     },
     scout: {
@@ -862,10 +864,15 @@
 
     // 1) 공격: 임계 이상 모인 라인이 있으면(예비 reserve 남기고) 모은 병력 모아치기
     {
+      // 방어형은 경제 완성 후 임계/규모를 키워 누적 포탑·주둔을 깨는 대규모 공격(교착 타개).
+      let atkThr = ps.attackThreshold, atkMax = ps.attackMax;
+      if (ps.rampAttack && p.workers >= ps.targetWorkers) {
+        atkThr = Math.max(atkThr, 8); atkMax = Math.max(atkMax, 10);
+      }
       let target = -1, best = -1;
       for (let l = 0; l < C.LINES; l++) {
         const sendable = garr[l] - ps.reserve;
-        if (garr[l] >= ps.attackThreshold && sendable >= 1 && garr[l] > best) {
+        if (garr[l] >= atkThr && sendable >= 1 && garr[l] > best) {
           best = garr[l]; target = l;
         }
       }
@@ -873,10 +880,10 @@
         if (ps.opportunist) {
           // 약한 라인 발견 + 그 라인에 보낼 병력이 공격 임계(4기+) 이상일 때만 그쪽으로 집중
           const weak = weakestEnemyLine(state, side);
-          if (weak >= 0 && garr[weak] - ps.reserve >= ps.attackThreshold) target = weak;
+          if (weak >= 0 && garr[weak] - ps.reserve >= atkThr) target = weak;
         }
         const sendable = garr[target] - ps.reserve;
-        return { type: "attack", line: target, count: Math.min(ps.attackMax, sendable) };
+        return { type: "attack", line: target, count: Math.min(atkMax, sendable) };
       }
     }
 
@@ -1040,12 +1047,17 @@
   // 시뮬레이터 — AI vs AI
   // ========================================================================
   function playGame(playstyleA, playstyleB, seed) {
-    const rng = makeRng(seed || 1);
+    // 측별 독립 RNG: 두 AI가 같은 스트림을 공유하면 호출 순서가 rng 소비를 바꿔
+    // 선후공 편차(후공 유리)가 생긴다. 독립 스트림으로 매치업을 대칭·공정하게.
+    const s = seed || 1;
+    const rngA = makeRng(s * 7 + 1);
+    const rngB = makeRng(s * 7 + 2);
+    const rngR = makeRng(s * 7 + 3);
     const state = createState();
     while (state.winner === null && state.turn < C.MAX_TURNS) {
-      aiTakeTurn(state, 0, playstyleA, rng);
-      aiTakeTurn(state, 1, playstyleB, rng);
-      resolveTurn(state, rng);
+      aiTakeTurn(state, 0, playstyleA, rngA);
+      aiTakeTurn(state, 1, playstyleB, rngB);
+      resolveTurn(state, rngR);
     }
     return {
       winner: state.winner === null ? "draw" : state.winner,
