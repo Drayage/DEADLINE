@@ -157,7 +157,8 @@
   .combat .cside.hurt{animation:hurt .42s}
   @keyframes hurt{0%,100%{transform:translateX(0)}20%{transform:translateX(-5px)}60%{transform:translateX(5px)}80%{transform:translateX(-2px)}}
   .combat .result{margin-top:16px; min-height:22px}
-.combat .result .verdict{font-size:17px; font-weight:900; color:var(--gold)}
+.combat .result .verdict{font-size:19px; font-weight:900; color:var(--gold); animation:vpop .45s cubic-bezier(.2,1.4,.4,1)}
+@keyframes vpop{0%{transform:scale(.4); opacity:0}60%{transform:scale(1.18)}100%{transform:scale(1); opacity:1}}
 .combat .result .conseq{list-style:none; margin:10px 0 0; padding:0; display:flex; flex-direction:column; gap:4px}
 .combat .result .conseq li{font-size:13px; font-weight:700; color:#dbe6f5; background:#0c121e;
   border:1px solid var(--line); border-radius:7px; padding:4px 8px}
@@ -1147,10 +1148,31 @@
     return ps;
   }
 
+  // 성향은 "초반 빌드오더"만 결정한다. 중반(OPENING_TURNS)부터는 성향을 버리고 현재
+  // 판세(경제/위협/병력)를 읽어 합리적 적응형 매크로로 전환한다. → 러쉬·타이밍이 한 번
+  // 막혔다고 게임을 던지지 않고 경제 복구·분산 압박·방어로 갈아탄다.
+  const OPENING_TURNS = 7;
+  function midGameProfile(state, side, ps, rng) {
+    if (state.turn < OPENING_TURNS) return ps;   // 초반: 성향(빌드오더) 그대로
+    if (ps.adaptive) return ps;                  // 정찰형은 자체 적응 로직(adaptScout) 유지
+    // 이미 경제 기반(배째기/경제)인 성향은 정체성 유지 → 상성(가위바위보) 보존.
+    if (ps.targetWorkers >= 10) return ps;
+    // 저경제 공격형(러쉬·타이밍): 초반 압박이 끝났으면 경제로 복구해 게임을 던지지 않게.
+    // 정체성은 "공격형" 그대로 두되, 경제 바닥을 끌어올리고 생존(방어/본진포탑)을 켠다.
+    return Object.assign({}, ps, {
+      targetWorkers: 12,
+      greedUntil: 0,
+      wantBaseTower: true,
+      defends: true,
+      spread: true,        // 복구 후엔 3라인 분산 압박
+      rampAttack: true,    // 경제 회복하면 모아서 대규모 공격
+    });
+  }
+
   // AI가 한 턴(행동 2회)을 계획해 실행. 방어는 턴당 1회로 제한(과방어 = 영구 교착 방지).
   function aiTakeTurn(state, side, playstyle, rng) {
     rng = rng || Math.random;
-    const ps = resolveAiPs(state, side, playstyle, rng);
+    const ps = midGameProfile(state, side, resolveAiPs(state, side, playstyle, rng), rng);
     let defenseUsed = 0;
     for (let act = 0; act < C.ACTIONS_PER_TURN; act++) {
       const choice = aiChooseAction(state, side, ps, rng, defenseUsed);
@@ -1341,21 +1363,53 @@
       return { type: "scout", line: randInt(rng, C.LINES) };
     }
 
-    // 4.5) 연구(여유 자금 + 성향) — 공격/방어 번갈아
-    if (ps.researchChance && rng() < ps.researchChance) {
+    // 4.5) 연구 — 성향 확률 OR 잉여 자금(모두 적용): 유닛/포탑 다 굴리고도 돈이 남으면
+    //      남는 돈을 업그레이드로 환원해 잉여 골드가 과도하게 쌓이지 않게 한다.
+    {
       const branch = (p.research.atk <= p.research.def) ? "atk" : "def";
-      if (p.gold >= researchCost(p, branch) + C.COST_UNIT) return { type: "research", branch };
+      const cost = researchCost(p, branch);
+      const byChance = ps.researchChance && rng() < ps.researchChance && p.gold >= cost + C.COST_UNIT;
+      // 연구 후에도 유닛 한 배치(150)는 남을 만큼 부유하면 → 잉여를 업글로(레벨 상한 8)
+      const bySurplus = p.gold >= cost + 150 && p.research[branch] < 8 && !state.queues[side].research[branch];
+      if (byChance || bySurplus) return { type: "research", branch };
     }
 
-    // 5) 유닛 생산 — 한 라인에 몰아주기(모아치기 준비), 한 번에 최대 3마리
+    // 5) 유닛 생산 — 성향에 따라 분산(빌드형) / 집중(러쉬·타이밍), 한 번에 최대 3마리
     if (p.gold >= C.COST_UNIT) {
-      let target = 0, best = -1;
-      for (let l = 0; l < C.LINES; l++) if (garr[l] > best) { best = garr[l]; target = l; }
+      const target = pickProductionLine(state, side, ps, garr, rng);
       const n = Math.min(3, Math.floor(p.gold / C.COST_UNIT));
       return { type: "unit", line: target, count: n };
     }
 
     return null;
+  }
+
+  // 유닛 생산 라인 선택.
+  // spread(빌드형): 가장 적게 쌓인 라인을 채워 3라인 균등 압박 → 수비 분산 강요.
+  // 집중(러쉬·타이밍): 이미 모인 라인을 유지해 한 방. 동률(초기 포함)이면 약점 라인/랜덤으로
+  // 한 라인을 커밋(상단 인덱스 편향 제거).
+  function pickProductionLine(state, side, ps, garr, rng) {
+    // 라인별 부하 = 주둔 + 이번 턴 큐(미완성 유닛). 큐를 포함해야 집중형이 첫 웨이브를
+    // 한 라인에 제대로 커밋하고, 분산형이 큐까지 고려해 균등하게 채운다.
+    const load = garr.slice();
+    for (const u of state.queues[side].units) if (u.line >= 0 && u.line < C.LINES) load[u.line] += 1;
+    const pickTied = (cands) => {
+      const weak = weakestEnemyLine(state, side);
+      if (weak >= 0 && cands.indexOf(weak) >= 0) return weak;
+      return cands[randInt(rng, cands.length)];
+    };
+    if (ps.spread) {
+      let min = Infinity;
+      for (let l = 0; l < C.LINES; l++) min = Math.min(min, load[l]);
+      const cands = [];
+      for (let l = 0; l < C.LINES; l++) if (load[l] === min) cands.push(l);
+      return pickTied(cands);
+    }
+    let max = -1;
+    for (let l = 0; l < C.LINES; l++) max = Math.max(max, load[l]);
+    const cands = [];
+    for (let l = 0; l < C.LINES; l++) if (load[l] === max) cands.push(l);
+    return cands.length > 1 ? pickTied(cands) : cands[0];
   }
 
   // 본진 인접 칸(긴급)의 적 유닛 수 합. P0: slot1 / P1: slot3
@@ -1594,30 +1648,40 @@ const Sfx = (() => {
     phase: () => { tone(560, 0.07, "sine", 0.07); },
     win:   () => { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.24, "triangle", 0.18, i * 0.13)); },
     lose:  () => { [392, 330, 262, 196].forEach((f, i) => tone(f, 0.3, "sawtooth", 0.16, i * 0.16)); },
+    // 교전 결과 스팅(게이지 다 내려간 뒤): 격파/패배/동귀어진
+    kill:  () => { tone(620, 0.1, "square", 0.17); tone(940, 0.16, "square", 0.15, 0.08); },
+    down:  () => { tone(300, 0.2, "sawtooth", 0.17, 0, 150); },
+    trade: () => { noise(0.16, 0.2, 500); tone(220, 0.2, "triangle", 0.13, 0, 150); },
   };
   const api = {};
   for (const k in sfx) api[k] = () => { if (on) { ensure(); resume(); sfx[k](); } };
 
-  // BGM: 느린 마이너 아르페지오 루프(은은하게)
+  // BGM: 느린 마이너 아르페지오 루프(은은하게). urgent=본진 침투 시 BPM↑ + 긴장 드론.
   const SC = [220.00, 261.63, 293.66, 329.63, 392.00, 440.00, 523.25]; // A 마이너풍
   const MEL = [0, 2, 4, 2, 1, 3, 5, 3, 0, 2, 4, 6, 1, 3, 4, 2];
   const BASS = [110, 110, 87.31, 98.00]; // A2 A2 F2 G2
+  let urgent = false;
   function tick() {
     if (!ctx || !on) return;
-    const t = ctx.currentTime;
-    tone(BASS[Math.floor(step / 4) % 4], 0.95, "triangle", 0.07, 0, null, bgm);
+    tone(BASS[Math.floor(step / 4) % 4], urgent ? 0.55 : 0.95, "triangle", urgent ? 0.09 : 0.07, 0, null, bgm);
     const m = SC[MEL[step % MEL.length]] * (step % 8 < 4 ? 1 : 1.5);
-    tone(m, 0.55, "sine", 0.06, 0, null, bgm);
+    tone(m, urgent ? 0.32 : 0.55, urgent ? "sawtooth" : "sine", 0.06, 0, null, bgm);
     if (step % 2 === 0) tone(m * 2, 0.3, "triangle", 0.025, 0.24, null, bgm);
+    if (urgent) tone(116.54, 0.3, "sawtooth", 0.045, 0, null, bgm); // Bb2 긴장 드론(불협)
     step++;
+  }
+  function reschedule() {
+    if (!timer) return;
+    clearInterval(timer); timer = setInterval(tick, urgent ? 300 : 480);
   }
   function startBgm() {
     ensure(); resume();
     if (!ctx || timer) return;
     bgm.gain.cancelScheduledValues(ctx.currentTime);
     bgm.gain.linearRampToValueAtTime(0.5, ctx.currentTime + 2.5);
-    tick(); timer = setInterval(tick, 480);
+    tick(); timer = setInterval(tick, urgent ? 300 : 480);
   }
+  api.setUrgent = (u) => { u = !!u; if (u === urgent) return; urgent = u; reschedule(); };
   function stopBgm() {
     if (timer) { clearInterval(timer); timer = null; }
     if (bgm && ctx) { bgm.gain.cancelScheduledValues(ctx.currentTime); bgm.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.4); }
@@ -1965,15 +2029,26 @@ async function showCombat(p, meA, foeA) {
   const dmgFoe = Math.max(0, (p.foeB ? p.foeB.hp : 0) - (foeA ? foeA.hp : 0));
   Sfx.hit();
   floatDmg("cMe", dmgMe); floatDmg("cFoe", dmgFoe);
+  // 게이지가 끝까지 내려갈 때까지 기다린다
   await Promise.all([tweenSide("cMe", p.meB, meA), tweenSide("cFoe", p.foeB, foeA)]);
-  // 결과(승패 + 후속효과)
+  await sleep(450);   // 다 내려간 뒤 한 박자 — 결과로 넘어가기 전 여운
+  // 결과(승패 + 후속효과) + 결과 효과음
+  const verdict = combatVerdict(meA, foeA);
+  resultSfx(meA, foeA);
   const cons = combatConsequences(p, meA, foeA);
   document.getElementById("combatResult").innerHTML =
-    `<div class="verdict">${combatVerdict(meA, foeA)}</div>` +
+    `<div class="verdict">${verdict}</div>` +
     (cons.length ? `<ul class="conseq">${cons.map(c => `<li>${c}</li>`).join("")}</ul>` : "");
-  await sleep(cons.length > 2 ? 1800 : 1350);
+  await sleep(cons.length > 2 ? 1900 : 1450);
   ov.className = "combat";
-  await sleep(220);
+  await sleep(260);
+}
+// 교전 결과 효과음(내 관점): 격파/전멸/동귀어진
+function resultSfx(meA, foeA) {
+  const meGone = !meA || meA.count <= 0, foeGone = !foeA || foeA.count <= 0;
+  if (meGone && foeGone) Sfx.trade();
+  else if (foeGone) Sfx.kill();
+  else if (meGone) Sfx.down();
 }
 
 // 정찰 애니메이션: 내 정찰병이 라인을 통과하는 연출(칸별 🔭 + HP)
@@ -2043,6 +2118,10 @@ function endGame() {
 // ---------------- 렌더 ----------------
 function render() {
   const p = state.players[SIDE];
+  // 적이 내 본진 칸에 들어오면 BGM을 긴급 모드로(BPM↑ + 긴장 드론)
+  let danger = 0;
+  for (let l = 0; l < C.LINES; l++) { const a = state.lines[l][ownBase()].armies[OPP]; if (a && a.count) danger += a.count; }
+  Sfx.setUrgent(danger > 0 && !gameOver);
   setText("turnTag", state.turn + 1);
   setText("actsTag", `${actsLeft()}/${C.ACTIONS_PER_TURN}`);
   if (mode === "online") setText("aiStyle", waitingOpp ? "대기중…" : "온라인");

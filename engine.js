@@ -762,10 +762,31 @@
     return ps;
   }
 
+  // 성향은 "초반 빌드오더"만 결정한다. 중반(OPENING_TURNS)부터는 성향을 버리고 현재
+  // 판세(경제/위협/병력)를 읽어 합리적 적응형 매크로로 전환한다. → 러쉬·타이밍이 한 번
+  // 막혔다고 게임을 던지지 않고 경제 복구·분산 압박·방어로 갈아탄다.
+  const OPENING_TURNS = 7;
+  function midGameProfile(state, side, ps, rng) {
+    if (state.turn < OPENING_TURNS) return ps;   // 초반: 성향(빌드오더) 그대로
+    if (ps.adaptive) return ps;                  // 정찰형은 자체 적응 로직(adaptScout) 유지
+    // 이미 경제 기반(배째기/경제)인 성향은 정체성 유지 → 상성(가위바위보) 보존.
+    if (ps.targetWorkers >= 10) return ps;
+    // 저경제 공격형(러쉬·타이밍): 초반 압박이 끝났으면 경제로 복구해 게임을 던지지 않게.
+    // 정체성은 "공격형" 그대로 두되, 경제 바닥을 끌어올리고 생존(방어/본진포탑)을 켠다.
+    return Object.assign({}, ps, {
+      targetWorkers: 12,
+      greedUntil: 0,
+      wantBaseTower: true,
+      defends: true,
+      spread: true,        // 복구 후엔 3라인 분산 압박
+      rampAttack: true,    // 경제 회복하면 모아서 대규모 공격
+    });
+  }
+
   // AI가 한 턴(행동 2회)을 계획해 실행. 방어는 턴당 1회로 제한(과방어 = 영구 교착 방지).
   function aiTakeTurn(state, side, playstyle, rng) {
     rng = rng || Math.random;
-    const ps = resolveAiPs(state, side, playstyle, rng);
+    const ps = midGameProfile(state, side, resolveAiPs(state, side, playstyle, rng), rng);
     let defenseUsed = 0;
     for (let act = 0; act < C.ACTIONS_PER_TURN; act++) {
       const choice = aiChooseAction(state, side, ps, rng, defenseUsed);
@@ -956,21 +977,53 @@
       return { type: "scout", line: randInt(rng, C.LINES) };
     }
 
-    // 4.5) 연구(여유 자금 + 성향) — 공격/방어 번갈아
-    if (ps.researchChance && rng() < ps.researchChance) {
+    // 4.5) 연구 — 성향 확률 OR 잉여 자금(모두 적용): 유닛/포탑 다 굴리고도 돈이 남으면
+    //      남는 돈을 업그레이드로 환원해 잉여 골드가 과도하게 쌓이지 않게 한다.
+    {
       const branch = (p.research.atk <= p.research.def) ? "atk" : "def";
-      if (p.gold >= researchCost(p, branch) + C.COST_UNIT) return { type: "research", branch };
+      const cost = researchCost(p, branch);
+      const byChance = ps.researchChance && rng() < ps.researchChance && p.gold >= cost + C.COST_UNIT;
+      // 연구 후에도 유닛 한 배치(150)는 남을 만큼 부유하면 → 잉여를 업글로(레벨 상한 8)
+      const bySurplus = p.gold >= cost + 150 && p.research[branch] < 8 && !state.queues[side].research[branch];
+      if (byChance || bySurplus) return { type: "research", branch };
     }
 
-    // 5) 유닛 생산 — 한 라인에 몰아주기(모아치기 준비), 한 번에 최대 3마리
+    // 5) 유닛 생산 — 성향에 따라 분산(빌드형) / 집중(러쉬·타이밍), 한 번에 최대 3마리
     if (p.gold >= C.COST_UNIT) {
-      let target = 0, best = -1;
-      for (let l = 0; l < C.LINES; l++) if (garr[l] > best) { best = garr[l]; target = l; }
+      const target = pickProductionLine(state, side, ps, garr, rng);
       const n = Math.min(3, Math.floor(p.gold / C.COST_UNIT));
       return { type: "unit", line: target, count: n };
     }
 
     return null;
+  }
+
+  // 유닛 생산 라인 선택.
+  // spread(빌드형): 가장 적게 쌓인 라인을 채워 3라인 균등 압박 → 수비 분산 강요.
+  // 집중(러쉬·타이밍): 이미 모인 라인을 유지해 한 방. 동률(초기 포함)이면 약점 라인/랜덤으로
+  // 한 라인을 커밋(상단 인덱스 편향 제거).
+  function pickProductionLine(state, side, ps, garr, rng) {
+    // 라인별 부하 = 주둔 + 이번 턴 큐(미완성 유닛). 큐를 포함해야 집중형이 첫 웨이브를
+    // 한 라인에 제대로 커밋하고, 분산형이 큐까지 고려해 균등하게 채운다.
+    const load = garr.slice();
+    for (const u of state.queues[side].units) if (u.line >= 0 && u.line < C.LINES) load[u.line] += 1;
+    const pickTied = (cands) => {
+      const weak = weakestEnemyLine(state, side);
+      if (weak >= 0 && cands.indexOf(weak) >= 0) return weak;
+      return cands[randInt(rng, cands.length)];
+    };
+    if (ps.spread) {
+      let min = Infinity;
+      for (let l = 0; l < C.LINES; l++) min = Math.min(min, load[l]);
+      const cands = [];
+      for (let l = 0; l < C.LINES; l++) if (load[l] === min) cands.push(l);
+      return pickTied(cands);
+    }
+    let max = -1;
+    for (let l = 0; l < C.LINES; l++) max = Math.max(max, load[l]);
+    const cands = [];
+    for (let l = 0; l < C.LINES; l++) if (load[l] === max) cands.push(l);
+    return cands.length > 1 ? pickTied(cands) : cands[0];
   }
 
   // 본진 인접 칸(긴급)의 적 유닛 수 합. P0: slot1 / P1: slot3
