@@ -1068,6 +1068,17 @@
 
     // 적응형(정찰형): 정찰로 적 성향을 분류해 카운터 전략으로 파라미터를 전환한다.
     if (ps.adaptive) {
+      // 상대가 실제로 날 공격해오면(공격형) 기록 — 경제로 분류됐어도 대응을 바꾼다.
+      if (!state._pressured) state._pressured = [false, false];
+      // 적의 진군 웨이브(공세 신호) 감지 — 공격형끼리 중앙 상쇄로 위치 감지가 안 되는 문제 보완.
+      let enemyMarch = 0;
+      const en = enemyOf(side);
+      for (let l = 0; l < C.LINES; l++)
+        for (let sl = 0; sl < C.SLOTS; sl++) {
+          const a = state.lines[l][sl].armies[en];
+          if (a) enemyMarch += (a.marching || 0);
+        }
+      if (totalThreat >= 2 || enemyMarch >= 3) state._pressured[side] = true;
       ps = adaptScout(state, side, ps);
       const threatened = totalThreat > 0 || urgent > 0 || baseTowerDamaged(p);
       const known = ps._enemyType != null;
@@ -1322,10 +1333,17 @@
       o.targetWorkers = 10; o.attackThreshold = 5; o.attackMax = 6;
       o.reserve = 3; o.opportunist = false;
       o.wantBaseTower = true; o.wantLineTower = true; o.stackBaseTower = true;
-    } else if (type === "ECONOMY") {  // TIMING_RUSH_MODE: 버프 결정타로 경제 처벌
-      o.targetWorkers = 7; o.attackThreshold = 5; o.attackMax = 5;
-      o.reserve = 0; o.opportunist = false; o.wantBaseTower = false; // 동일 라인 집중·공세 전념
-      o.timedUpgrade = true; o.timedUpgradeBranch = "atk"; o.timedUpgradeCap = 2;
+    } else if (type === "ECONOMY") {
+      if (state._pressured && state._pressured[side]) {
+        // 상대가 실은 공격형(타이밍) → 본진포탑으로 버티고 경제 채워 더 큰 공격으로 타개
+        o.targetWorkers = 11; o.attackThreshold = 8; o.attackMax = 10;
+        o.reserve = 2; o.opportunist = false; o.wantBaseTower = true; o.defends = true;
+      } else {
+        // 진짜 경제(수동) → 빠른 소규모 버프 공세로 탐욕 처벌(포탑 없이 공세 전념)
+        o.targetWorkers = 7; o.attackThreshold = 5; o.attackMax = 5;
+        o.reserve = 0; o.opportunist = false; o.wantBaseTower = false;
+        o.timedUpgrade = true; o.timedUpgradeBranch = "atk"; o.timedUpgradeCap = 2;
+      }
     } else if (type === "GREED_DEFENSE") { // ECONOMY_MODE: 배째기보다 더 배째기
       o.targetWorkers = 15; o.greedUntil = 13;
       o.wantBaseTower = true; o.attackThreshold = 6; o.attackMax = 7; o.opportunist = true;
