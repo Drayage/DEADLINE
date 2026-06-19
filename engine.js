@@ -625,7 +625,7 @@
       targetWorkers: 5,
       greedUntil: 0,
       wantBaseTower: false,
-      atkSize: [2, 2],
+      atkSize: [3, 4],       // 첫 웨이브로 본진포탑 1개를 깰 화력(정찰형 단일 포탑 처벌)
       reserve: 0,
       defends: false,
       scoutChance: 0,
