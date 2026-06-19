@@ -660,11 +660,12 @@
       targetWorkers: 7,
       greedUntil: 0,
       wantBaseTower: false,
-      atkSize: [3, 4],
+      atkSize: [5, 6],       // 버프와 결합해 포탑/주둔을 깰 수 있는 결정타 규모
       reserve: 0,
       defends: true,
       scoutChance: 0.15,
-      researchChance: 0.15,
+      timedUpgrade: true,    // 진군 웨이브가 적 1칸 도달 전에 공격연구가 완성되도록 타이밍 공업
+      timedUpgradeCap: 3,    // 이렇게 모인 공업 레벨까지만 타이밍 업글
     },
     greedyTurtle: {
       name: "무정찰배째기",
@@ -841,6 +842,22 @@
         const sendable = garr[target] - ps.reserve;
         return { type: "attack", line: target, count: Math.min(ps.attackMax, sendable) };
       }
+    }
+
+    // 1.5) 타이밍 공업: 진군 웨이브가 내 진영/중앙을 지나는 동안(=적 1칸 도달 전) 공격연구를
+    //      올려, 본진 들어가기 직전 결정타에 +ATK가 적용되게 한다. 같은 라인 반복 찔끔이
+    //      아니라 "버프된 한 방"으로 포탑/주둔을 깨는 게 목적.
+    if (ps.timedUpgrade && totalThreat === 0 && p.research.atk < (ps.timedUpgradeCap || 3) &&
+        p.gold >= C.COST_RESEARCH && !state.queues[side].research.atk) {
+      const half = side === 0 ? [0, 1, 2] : [2, 3, 4]; // 내 진영+중앙(아직 적 미접촉 구간)
+      let pushing = false;
+      for (let l = 0; l < C.LINES && !pushing; l++) {
+        for (const sl of half) {
+          const a = state.lines[l][sl].armies[side];
+          if (a && a.marching > 0) { pushing = true; break; }
+        }
+      }
+      if (pushing) return { type: "research", branch: "atk" };
     }
 
     // 2) 평시 본진포탑(원하면)
