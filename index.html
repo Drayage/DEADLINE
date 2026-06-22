@@ -1762,7 +1762,60 @@ function slotName(absSlot) {
   return "중앙";
 }
 
+// ---------------- 저장/복원 (새로고침 유지) ----------------
+const SAVE_KEY = "dl_save";
+function saveGame() {
+  if (animating) return;   // 해결 애니메이션 중엔 저장 안 함(불완전 상태 방지)
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      v: 2, mode, side: SIDE, aiStyle, turn: state.turn,
+      // 게임 종료 시엔 최종 상태(승패·파괴 반영)를 저장해 새로고침 시 결과 화면 그대로.
+      turnSnapshot: gameOver ? JSON.stringify(state) : turnSnapshot,
+      pending: pending.map(p => ({ action: p.action, label: p.label })),
+      scoutPeekBase, scoutDeadMarks, gameOver, code: net ? net.code : null,
+    }));
+  } catch (e) {}
+}
+function loadSave() { try { return JSON.parse(localStorage.getItem(SAVE_KEY) || "null"); } catch (e) { return null; } }
+function clearSave() { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} }
+
+// 부팅: 세이브가 있으면 이어서, 없으면 새 게임.
+function restoreOrNew() {
+  const s = loadSave();
+  if (!s || !s.turnSnapshot) return newGame();
+  try {
+    if (s.gameOver) return restoreFinished(s);
+    if (s.mode === "online") return resumeOnline(s);
+    return restoreAi(s);
+  } catch (e) { clearSave(); return newGame(); }
+}
+// 공통: 저장된 깨끗한 턴 상태 + 내 pending 재적용
+function applyRestoredBase(s) {
+  state = JSON.parse(s.turnSnapshot);
+  turnSnapshot = s.turnSnapshot;
+  aiStyle = s.aiStyle; gameOver = !!s.gameOver;
+  peekBase = false; waitingOpp = false;
+  scoutPeekBase = !!s.scoutPeekBase; scoutDeadMarks = s.scoutDeadMarks || [];
+  pending = [];
+  if (state.turn === s.turn) for (const p of (s.pending || [])) {
+    const r = E.applyAction(state, SIDE, p.action); if (r.ok) pending.push(p);
+  }
+  document.getElementById("bannerSlot").innerHTML = "";
+}
+function restoreAi(s) {
+  mode = "ai"; SIDE = 0; OPP = 1;
+  applyRestoredBase(s);
+  render(); toast("이어서 진행");
+}
+function restoreFinished(s) {
+  mode = s.mode || "ai"; SIDE = s.side || 0; OPP = E.enemyOf(SIDE);
+  if (net) { net = null; }
+  applyRestoredBase(s);
+  render(); showBanner();
+}
+
 function newGame() {
+  clearSave();
   mode = "ai"; SIDE = 0; OPP = 1;
   if (hostWaitRef) { hostWaitRef.off(); hostWaitRef = null; }
   if (net) { net.leave(); net = null; }
@@ -1776,6 +1829,7 @@ function newGame() {
   logRaw(`새 게임 — 상대 성향은 비공개. 행운을 빈다.`);
   autofillAll();
   render();
+  saveGame();
 }
 
 // 온라인 대전 시작(양 클라가 동일 초기 상태 — createState는 결정적).
@@ -1791,6 +1845,7 @@ function startOnlineGame(side) {
   logRaw(`온라인 대전 시작 — 너는 ${side === 0 ? "호스트(파랑)" : "게스트(파랑)"}. 행운을 빈다.`);
   autofillAll();
   render();
+  saveGame();
 }
 
 function actsLeft() { return C.ACTIONS_PER_TURN - pending.length; }
@@ -1804,6 +1859,7 @@ function doAction(action, label) {
   Sfx.place();
   toast(label + " 예약됨");
   render();
+  saveGame();
 }
 
 function undo() {
@@ -1812,6 +1868,7 @@ function undo() {
   pending = [];
   toast("이번 턴 행동 취소");
   render();
+  saveGame();
 }
 
 let animating = false;
@@ -1929,6 +1986,7 @@ async function runResolution() {
   turnSnapshot = JSON.stringify(state);
   autofillAll();   // 새 턴 시작: 수량칸을 기본적으로 최대값으로
   render();
+  saveGame();      // 턴 경계 저장(새로고침 시 이 턴부터 복원)
 }
 
 // 교전 칸 목록 → 양측 사전 상태 캡처(연출용). 본진칸은 후속효과 계산용 스냅샷도 저장.
@@ -2393,15 +2451,24 @@ function resign() {
 }
 
 function endGame() {
-  gameOver = true; render();
+  gameOver = true;
+  const w = state.winner;
+  if (w === SIDE) Sfx.win(); else if (w !== "draw") Sfx.lose();
+  if (mode === "online" && net) { net.leave(); net = null; }
+  if (oppGraceTimer) { clearTimeout(oppGraceTimer); oppGraceTimer = null; }
+  render();
+  saveGame();         // 종료 상태 저장(새로고침 시 결과 유지)
+  showBanner();
+}
+// 결과 배너(endGame과 복원 양쪽에서 사용 — 효과음/정리는 endGame에서만)
+function showBanner() {
   const w = state.winner;
   let title, cls;
-  if (w === SIDE) { title = "승 리"; cls = "win"; Sfx.win(); }
+  if (w === SIDE) { title = "승 리"; cls = "win"; }
   else if (w === "draw") { title = "무승부"; cls = ""; }
-  else { title = "패 배"; cls = "lose"; Sfx.lose(); }
-  const sub = mode === "online"
-    ? "온라인 대전 종료"
-    : `상대 성향: ${E.PLAYSTYLES[aiStyle].name}`;
+  else { title = "패 배"; cls = "lose"; }
+  const sub = mode === "online" ? "온라인 대전 종료"
+    : (aiStyle ? `상대 성향: ${E.PLAYSTYLES[aiStyle].name}` : "");
   document.getElementById("bannerSlot").innerHTML =
     `<div class="overlay"><div class="banner ${cls}">
       <div class="res-big">${title}</div>
@@ -2409,7 +2476,6 @@ function endGame() {
       <button class="primary" id="bAgain">다시 하기</button>
     </div></div>`;
   document.getElementById("bAgain").onclick = newGame;
-  if (mode === "online" && net) { net.leave(); net = null; }
 }
 
 // ---------------- 렌더 ----------------
@@ -2655,7 +2721,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "768255871086",
   appId: "1:768255871086:web:1677a38d4c6bf64d9cbe7f"
 };
-let net = null, fbDb = null, hostWaitRef = null;
+let net = null, fbDb = null, hostWaitRef = null, oppGraceTimer = null;
 
 function fbReady() {
   if (typeof firebase === "undefined") return false;       // SDK 로드 실패(오프라인 등)
@@ -2680,9 +2746,9 @@ function makeNet(code, side) {
   let oppRef = null;
   return {
     code, side, roomRef,
-    watchPresence(onGone) {
+    watchPresence(onGone, onBack) {
       oppRef = roomRef.child("players/" + E.enemyOf(side));
-      oppRef.on("value", snap => { if (!snap.exists()) onGone(); });
+      oppRef.on("value", snap => { if (snap.exists()) { if (onBack) onBack(); } else onGone(); });
     },
     submitTurn(n, s, actions) {
       // submitted:true 마커 필수 — 행동 0개면 actions:[]가 Firebase에서 사라져
@@ -2709,11 +2775,50 @@ function makeNet(code, side) {
   };
 }
 
+// 상대 이탈 → 즉시 기권 대신 유예(상대 새로고침/일시 끊김 대비). 미복귀 시 부전승.
+const OPP_GRACE_MS = 30000;
 function onOpponentLeft() {
-  if (gameOver || mode !== "online") return;
-  toast("상대가 나갔어 — 부전승", true);
-  state.winner = SIDE;
-  endGame();
+  if (gameOver || mode !== "online" || oppGraceTimer) return;
+  toast("상대 연결 끊김 — 재접속 대기 중…", true);
+  oppGraceTimer = setTimeout(() => {
+    oppGraceTimer = null;
+    if (!gameOver && mode === "online") { toast("상대 미복귀 — 부전승", true); state.winner = SIDE; endGame(); }
+  }, OPP_GRACE_MS);
+}
+function onOpponentBack() {
+  if (oppGraceTimer) { clearTimeout(oppGraceTimer); oppGraceTimer = null; toast("상대 재접속"); }
+}
+
+// 새로고침 후 온라인 재접속: 방 재참가 + Firebase 턴기록 델타 재생으로 상태 복원.
+async function resumeOnline(s) {
+  if (!fbReady()) { toast("온라인 재접속 불가 — 새 게임", true); clearSave(); return newGame(); }
+  try {
+    const roomRef = fbDb.ref("rooms/" + s.code);
+    const snap = await roomRef.get();
+    const room = snap.exists() ? snap.val() : null;
+    if (!room || (room.meta && room.meta.status === "ended")) {
+      toast("방이 종료됐어 — 새 게임", true); clearSave(); return newGame();
+    }
+    mode = "online"; SIDE = s.side; OPP = E.enemyOf(s.side); aiStyle = null;
+    applyRestoredBase(s);   // state = 저장된 턴 스냅샷
+    // 델타 재생: 자리 비운 사이 완료된 턴(양측 제출)을 적용해 현재 턴까지 따라잡기
+    let n = state.turn, replayed = false;
+    while (room.turns && room.turns[n] && room.turns[n][0] && room.turns[n][1]) {
+      for (const a of (room.turns[n][0].actions || [])) E.applyAction(state, 0, a);
+      for (const a of (room.turns[n][1].actions || [])) E.applyAction(state, 1, a);
+      E.resolveTurn(state); n++; replayed = true;
+    }
+    if (replayed) { pending = []; turnSnapshot = JSON.stringify(state); }
+    // 방 재참가(내 플레이어 노드 재등록) + onDisconnect 재무장 + 상대 감시
+    await roomRef.child("players/" + SIDE).set({ joined: true });
+    await roomRef.child("meta/status").set("playing");
+    net = makeNet(s.code, SIDE);
+    net.watchPresence(onOpponentLeft, onOpponentBack);
+    E.checkVictory(state);
+    if (state.winner !== null) { gameOver = true; saveGame(); render(); return showBanner(); }
+    autofillAll(); render(); saveGame();
+    toast("재접속됨 — 이어서 진행");
+  } catch (e) { toast("재접속 실패 — 새 게임", true); clearSave(); newGame(); }
 }
 
 // ---- 로비 UI ----
@@ -2750,7 +2855,7 @@ async function lobbyCreate() {
       if (snap.exists()) {
         if (hostWaitRef) { hostWaitRef.off(); hostWaitRef = null; }
         roomRef.child("meta/status").set("playing");
-        net.watchPresence(onOpponentLeft);
+        net.watchPresence(onOpponentLeft, onOpponentBack);
         startOnlineGame(0);
       }
     });
@@ -2772,7 +2877,7 @@ async function lobbyJoin() {
     await roomRef.child("players/1").set({ joined: true });
     await roomRef.child("meta/status").set("playing");
     net = makeNet(code, 1);
-    net.watchPresence(onOpponentLeft);
+    net.watchPresence(onOpponentLeft, onOpponentBack);
     startOnlineGame(1);
   } catch (e) { lobbyError("참가 실패: " + (e.message || e)); }
 }
@@ -2856,7 +2961,7 @@ function fillLineSeg(id, onPick){
 }
 
 bind();
-newGame();
+restoreOrNew();
 
 // PWA: 서비스워커 등록(설치/오프라인 싱글플레이). 온라인 대전은 네트워크 필요.
 if ("serviceWorker" in navigator) {
