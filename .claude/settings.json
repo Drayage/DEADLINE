@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/check-js-syntax.cjs\"",
+            "timeout": 30,
+            "statusMessage": "JS 문법 검사 중..."
+          }
+        ]
+      }
+    ]
+  }
+}
