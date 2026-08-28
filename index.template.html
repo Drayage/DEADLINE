@@ -695,13 +695,13 @@ async function onlineEndTurn() {
   try {
     await net.submitTurn(n, SIDE, myActions);
     const oppActions = await net.awaitOpponentTurn(n);
-    waitingOpp = false;
     // 상대 행동 적용(각 측 독립이라 적용 순서 무관 → 양 클라 동일 상태)
     for (const a of oppActions) E.applyAction(state, OPP, a);
     await runResolution();
   } catch (err) {
-    waitingOpp = false;
     toast("상대 연결 끊김: " + (err && err.message || err), true);
+  } finally {
+    waitingOpp = false;
     renderControls();
   }
 }
@@ -1546,17 +1546,35 @@ function makeNet(code, side) {
       // 상대 리스너가 영영 안 깨어나는 교착이 생긴다(빈 노드는 exists()=false).
       return roomRef.child("turns/" + n + "/" + s).set({ submitted: true, actions: actions || [] });
     },
-    awaitOpponentTurn(n) {
+    awaitOpponentTurn(n, timeoutMs = 60000) {
       const ref = roomRef.child("turns/" + n + "/" + E.enemyOf(side));
-      return new Promise(resolve => {
+      return new Promise((resolve, reject) => {
+        let timer = setTimeout(() => {
+          this._cancelAwait = null;
+          ref.off("value", handler);
+          reject(new Error("상대 턴 제출 대기 시간 초과"));
+        }, timeoutMs);
         const handler = snap => {
-          if (snap.exists()) { ref.off("value", handler); resolve((snap.val() && snap.val().actions) || []); }
+          if (snap.exists()) {
+            clearTimeout(timer);
+            this._cancelAwait = null;
+            ref.off("value", handler);
+            resolve((snap.val() && snap.val().actions) || []);
+          }
+        };
+        this._cancelAwait = (reason) => {
+          clearTimeout(timer);
+          this._cancelAwait = null;
+          ref.off("value", handler);
+          reject(new Error(reason || "대기 취소됨"));
         };
         ref.on("value", handler);
       });
     },
+    _cancelAwait: null,
     leave() {
       try {
+        if (this._cancelAwait) { this._cancelAwait("연결 끊김"); }
         if (oppRef) oppRef.off();
         myRef.onDisconnect().cancel();
         myRef.remove();

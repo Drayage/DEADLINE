@@ -1904,7 +1904,6 @@ async function onlineEndTurn() {
   try {
     await net.submitTurn(n, SIDE, myActions);
     const oppActions = await net.awaitOpponentTurn(n);
-    waitingOpp = false;
     // 상대 행동 적용(각 측 독립이라 적용 순서 무관 → 양 클라 동일 상태)
     for (const a of oppActions) E.applyAction(state, OPP, a);
     await runResolution();
